@@ -18,6 +18,7 @@
 #include <ERF_SpongeStruct.H>
 #include <ERF_TurbStruct.H>
 #include <ERF_TurbPertStruct.H>
+#include <ERF_WallFluxesAllFaces.H>
 
 enum MapFacType {
 //  This version assumes isotropic
@@ -934,6 +935,18 @@ struct SolverChoice {
             amrex::Print() << "Radiation Model: None" << std::endl;
         }
 
+        // Wall fluxes configuration
+        {
+            amrex::ParmParse pp_erf("erf");
+            pp_erf.query("use_wall_fluxes", use_wall_fluxes);
+            if (use_wall_fluxes) {
+                wallflux_params.resize(max_level + 1);
+                for (int lev = 0; lev <= max_level; lev++) {
+                    init_wallflux_params_level(wallflux_params[lev], pp_prefix, lev);
+                }
+            }
+        }
+
         amrex::Print() << "Gradp_type                  : " << gradp_type << std::endl;
 
         for (int lev = 0; lev <= max_level; lev++) {
@@ -947,6 +960,81 @@ struct SolverChoice {
 
         for (int lev = 0; lev <= max_level; lev++) {
             turbChoice[lev].display(lev);
+        }
+    }
+
+    void init_wallflux_params_level (WallFluxParams& wallflux_level, std::string pp_prefix, [[maybe_unused]] int lev)
+    {
+        amrex::ParmParse pp(pp_prefix);
+
+        // Initialize with defaults
+        wallflux_level.enable = false;
+
+        // Read global parameters for this level
+        std::string prefix = "wallflux";
+        amrex::ParmParse pp_wf(prefix);
+
+        pp_wf.query("enable", wallflux_level.enable);
+
+        // For backward compatibility: check if old water_coated parameter exists
+        bool water_coated_global = true;
+        if (pp_wf.query("water_coated", water_coated_global)) {
+            amrex::Warning("wallflux.water_coated is deprecated. Use wallflux.wetness.{xlo,xhi,ylo,yhi,zlo,zhi} instead.");
+            // Set all faces to this value for backward compatibility
+            for (int face = 0; face < 6; face++) {
+                wallflux_level.face[face].wetness = water_coated_global ? 1.0 : 0.0;
+            }
+        }
+
+        if (!wallflux_level.enable) {
+            return; // Skip face-specific parameters if not enabled
+        }
+
+        // Face names for parsing
+        std::vector<std::string> face_names = {"xlo", "xhi", "ylo", "yhi", "zlo", "zhi"};
+
+        // Read parameters for each face
+        for (int face = 0; face < 6; face++) {
+            WallFaceParams& fp = wallflux_level.face[face];
+            const std::string& face_name = face_names[face];
+
+            // Momentum model
+            std::string mom_model_str = "auto";
+            std::string query_name = "momentum_model." + face_name;
+            pp_wf.query(query_name.c_str(), mom_model_str);
+
+            if (mom_model_str == "auto") {
+                fp.model = WallFaceParams::MomModel::Auto;
+            } else if (mom_model_str == "drag") {
+                fp.model = WallFaceParams::MomModel::Drag;
+            } else if (mom_model_str == "free_slip") {
+                fp.model = WallFaceParams::MomModel::FreeSlip;
+            } else {
+                amrex::Abort("Invalid momentum_model for face " + face_name + ": " + mom_model_str +
+                           ". Valid options are: auto, drag, free_slip");
+            }
+
+            // Drag coefficients
+            query_name = "Cm." + face_name;
+            pp_wf.query(query_name.c_str(), fp.Cm);
+
+            query_name = "Ch." + face_name;
+            if (!pp_wf.query(query_name.c_str(), fp.Ch)) {
+                fp.Ch = fp.Cm; // Default to Cm if Ch not specified
+            }
+
+            query_name = "Cq." + face_name;
+            if (!pp_wf.query(query_name.c_str(), fp.Cq)) {
+                fp.Cq = fp.Cm; // Default to Cm if Cq not specified
+            }
+
+            // Wall temperature
+            query_name = "T_wall." + face_name;
+            pp_wf.query(query_name.c_str(), fp.T_wall);
+
+            // Wall wetness (overrides backward-compatible global setting)
+            query_name = "wetness." + face_name;
+            pp_wf.query(query_name.c_str(), fp.wetness);
         }
     }
 
@@ -1208,5 +1296,9 @@ struct SolverChoice {
 
     bool io_hurricane_eye_tracker = false;
     amrex::Real hurricane_eye_latitude = -1e10, hurricane_eye_longitude = -1e10;
+
+    // Enables heat/moisture exchange on all domain faces (cloud chamber applications)
+    bool use_wall_fluxes = false;                   ///< Enable wall flux boundary conditions
+    amrex::Vector<WallFluxParams> wallflux_params;  ///< Per-level wall flux parameters
 };
 #endif

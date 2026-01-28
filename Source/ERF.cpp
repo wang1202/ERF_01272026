@@ -642,6 +642,25 @@ ERF::Evolve ()
 
         post_timestep(step, cur_time, dt[0]);
 
+        // Wall flux diagnostics output
+        if (m_wallflux_diag.enabled && ((step+1) % m_wallflux_diag.output_interval == 0)) {
+            for (int lev = 0; lev <= finest_level; ++lev) {
+                m_wallflux_diag.output(lev, cur_time, step+1,
+                                       vars_new[lev][Vars::xvel],
+                                       vars_new[lev][Vars::yvel],
+                                       vars_new[lev][Vars::zvel],
+                                       vars_new[lev][Vars::cons],
+                                       Tau[lev],
+                                       SFS_hfx1_lev[lev].get(),
+                                       SFS_hfx2_lev[lev].get(),
+                                       SFS_hfx3_lev[lev].get(),
+                                       SFS_q1fx1_lev[lev].get(),
+                                       SFS_q1fx2_lev[lev].get(),
+                                       SFS_q1fx3_lev[lev].get(),
+                                       geom[lev]);
+            }
+        }
+
         if (writeNow(cur_time, step+1, m_plot3d_int_1, m_plot3d_per_1, dt[0], last_plot3d_file_time_1)) {
             last_plot3d_file_step_1 = step+1;
             Write3DPlotFile(1,plotfile3d_type_1,plot3d_var_names_1);
@@ -720,6 +739,11 @@ ERF::Evolve ()
     if ( (m_check_int > 0 || m_check_per > 0.) && istep[0] > last_check_file_step) {
         WriteCheckpointFile();
         if (m_check_per > 0.) {last_check_file_time += m_check_per;}
+    }
+
+    // Finalize wall flux diagnostics
+    if (m_wallflux_diag.enabled) {
+        m_wallflux_diag.finalize();
     }
 
     BL_PROFILE_VAR_STOP(evolve);
@@ -1818,6 +1842,11 @@ ERF::InitData_post ()
         }
     }
 
+    // Initialize wall flux diagnostics if enabled
+    if (m_wallflux_diag.enabled) {
+        m_wallflux_diag.initialize(finest_level + 1, geom);
+    }
+
 }
 
 void
@@ -2295,6 +2324,12 @@ ERF::ReadParameters ()
         pp.query("sum_period"  , sum_per);
 
         pp.query("pert_interval", pert_interval);
+
+        // Wall flux diagnostics settings
+        pp.query("wallflux_diagnostics", m_wallflux_diag.enabled);
+        pp.query("wallflux_output_interval", m_wallflux_diag.output_interval);
+        pp.query("wallflux_output_dir", m_wallflux_diag.output_dir);
+        pp.query("wallflux_filename_prefix", m_wallflux_diag.filename_prefix);
 
         // Time step controls
         pp.query("cfl", cfl);

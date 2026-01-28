@@ -64,6 +64,7 @@
 #endif
 
 #include <ERF_RadiationModels.H>
+#include <ERF_WallFluxDiagnostics.H>
 
 #ifdef ERF_USE_SHOC
 #include "ERF_ShocInterface.H"
@@ -1220,6 +1221,9 @@ private:
     static int sum_interval;
     static int pert_interval;
     static amrex::Real sum_per;
+
+    // Wall flux diagnostics
+    WallFluxDiagnostics m_wallflux_diag;
 
     // Write in native AMReX or NetCDF format for each plotfile
     static PlotFileType plotfile3d_type_1;

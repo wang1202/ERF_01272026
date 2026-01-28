@@ -1,0 +1,121 @@
+# ------------------  INPUTS TO MAIN PROGRAM  -------------------
+# CloudChamber test case: enclosed box with wall heat/moisture exchange
+stop_time = 370.
+
+amrex.fpe_trap_invalid = 1
+
+erf.anelastic = 1
+erf.prob_name = "CloudChamber"
+
+erf.init_type = "uniform"
+
+fabarray.mfiter_tile_size = 1024 1024 1024
+
+# PROBLEM SIZE & GEOMETRY
+geometry.prob_lo = -1. -1.  0.
+geometry.prob_hi =  1.  1.  1.
+amr.n_cell       = 64 64 32
+
+geometry.is_periodic = 0 0 0
+
+xlo.type = "SlipWall"
+xhi.type = "SlipWall"
+ylo.type = "SlipWall"
+yhi.type = "SlipWall"
+zlo.type = "SlipWall"
+zhi.type = "SlipWall"
+
+# TIME STEP CONTROL
+erf.cfl            = 0.7
+erf.dt_max_initial = 0.025
+
+# DIAGNOSTICS & VERBOSITY
+erf.sum_interval   = 1       # timesteps between computing mass
+erf.v              = 1       # verbosity in ERF.cpp
+amr.v              = 1       # verbosity in Amr.cpp
+
+# REFINEMENT / REGRIDDING
+amr.max_level       = 0       # maximum level number allowed
+
+# CHECKPOINT FILES
+erf.check_file      = chk        # root name of checkpoint file
+erf.check_int       = 1000       # number of timesteps between checkpoints
+
+# PLOTFILES
+erf.plot_file_1     = plt        # prefix of plotfile name
+erf.plot_int_1      = 100        # number of timesteps between plotfiles
+erf.plot_vars_1     = density x_velocity y_velocity z_velocity pressure temp theta
+
+erf.use_gravity = true
+
+# SOLVER CHOICE
+erf.molec_diff_type  = "None"
+erf.alpha_T = 0.0
+erf.alpha_C = 0.0
+
+erf.les_type  = "Smagorinsky"
+erf.Cs        = 0.1
+erf.Pr_t      = 0.33333333333333
+
+# MOISTURE CONFIGURATION
+erf.moisture_model = SatAdj
+
+# PROBLEM PARAMETERS (Thermodynamic targets)
+prob.T_0  = 285.0      # K
+prob.p_0  = 101325.0   # Pa
+prob.rh_0 = 1.0        # unitless (0-1). Use 1.0 for exactly saturated, qc=0.
+
+# Mean wind and small velocity noise to seed turbulence
+prob.U_0 = 0.0
+prob.V_0 = 0.0
+prob.W_0 = 0.0
+prob.U_0_Pert_Mag = 0.05  # m/s
+prob.V_0_Pert_Mag = 0.05
+prob.W_0_Pert_Mag = 0.05
+
+# WALL FLUX CONFIGURATION
+erf.use_wall_fluxes = true
+
+# Wall flux parameters - all faces, momentum drag model
+wallflux.enable = true
+wallflux.water_coated = true
+
+# Momentum model for all faces - drag mode
+wallflux.momentum_model.xlo = "drag"
+wallflux.momentum_model.xhi = "drag"
+wallflux.momentum_model.ylo = "drag"
+wallflux.momentum_model.yhi = "drag"
+wallflux.momentum_model.zlo = "drag"
+wallflux.momentum_model.zhi = "drag"
+
+# Drag coefficients (same for all faces to start)
+wallflux.Cm.xlo = 0.0318
+wallflux.Cm.xhi = 0.0318
+wallflux.Cm.ylo = 0.0318
+wallflux.Cm.yhi = 0.0318
+wallflux.Cm.zlo = 0.0318
+wallflux.Cm.zhi = 0.0318
+
+# Heat exchange coefficients
+wallflux.Ch.xlo = 0.0335
+wallflux.Ch.xhi = 0.0335
+wallflux.Ch.ylo = 0.0335
+wallflux.Ch.yhi = 0.0335
+wallflux.Ch.zlo = 0.0335
+wallflux.Ch.zhi = 0.0335
+
+# Moisture exchange coefficients
+wallflux.Cq.xlo = 0.0372
+wallflux.Cq.xhi = 0.0372
+wallflux.Cq.ylo = 0.0372
+wallflux.Cq.yhi = 0.0372
+wallflux.Cq.zlo = 0.0372
+wallflux.Cq.zhi = 0.0372
+
+# Wall temperatures (in Kelvin) - different for each face
+wallflux.T_wall.xlo = 285.0  # neutral left wall
+wallflux.T_wall.xhi = 285.0  # neutral right wall
+wallflux.T_wall.ylo = 285.0  # neutral front wall
+wallflux.T_wall.yhi = 285.0  # neutral back wall
+wallflux.T_wall.zlo = 295.0  # warm bottom wall
+wallflux.T_wall.zhi = 275.0  # cool top wall

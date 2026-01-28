@@ -461,9 +461,9 @@ void erf_slow_rhs_post (int level, int finest_level,
                                                diffflux_x, diffflux_y, diffflux_z, dxInv, SmnSmn_a,
                                                mf_mx, mf_ux, mf_vx,
                                                mf_my, mf_uy, mf_vy,
-                                               hfx_z, q1fx_z, q2fx_z, diss,
+                                               hfx_x, hfx_y, hfx_z, q1fx_x, q1fx_y, q1fx_z, q2fx_z, diss,
                                                mu_turb, solverChoice, level,
-                                               tm_arr, grav_gpu, bc_ptr_d, use_SurfLayer, l_vert_implicit_fac);
+                                               tm_arr, grav_gpu, bc_ptr_d, use_SurfLayer, solverChoice.use_wall_fluxes, l_vert_implicit_fac);
                     }
                 } // use_diff
             } // valid slow var

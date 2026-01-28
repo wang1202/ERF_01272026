@@ -275,6 +275,9 @@ function(build_erf_lib erf_lib_name)
        ${SRC_DIR}/BoundaryConditions/ERF_FillBdyCCVels.cpp
        ${SRC_DIR}/BoundaryConditions/ERF_FillPatcher.cpp
        ${SRC_DIR}/BoundaryConditions/ERF_PhysBCFunct.cpp
+       ${SRC_DIR}/BoundaryConditions/ERF_WallFluxesAllFaces.cpp
+       ${SRC_DIR}/BoundaryConditions/ERF_WallFluxDiagnostics.cpp
+       ${SRC_DIR}/BoundaryConditions/ERF_WriteWallFluxes.cpp
        ${SRC_DIR}/Diffusion/ERF_DiffusionSrcForMom.cpp
        ${SRC_DIR}/Diffusion/ERF_DiffusionSrcForMom_EB.cpp
        ${SRC_DIR}/Diffusion/ERF_DiffusionSrcForState_N.cpp

@@ -13,6 +13,7 @@
 #include "ERF_EBAdvection.H"
 #include "ERF_EB.H"
 #include "ERF_SurfaceLayer.H"
+#include "ERF_WallFluxesAllFaces.H"
 
 using namespace amrex;
 
@@ -234,6 +235,22 @@ void erf_slow_rhs_pre (int level, int finest_level,
             //}
         }
 #endif
+
+        // Apply wall fluxes on all domain faces if enabled
+        // This provides boundary conditions for enclosed domains (e.g., cloud chambers)
+        // where all faces act as walls with heat/moisture exchange
+        if (solverChoice.use_wall_fluxes && level < static_cast<int>(solverChoice.wallflux_params.size())) {
+            const WallFluxParams& wallflux_params = solverChoice.wallflux_params[level];
+            Vector<const MultiFab*> mfs = {&S_data[IntVars::cons], &xvel, &yvel, &zvel};
+            // Pass molecular diffusivities for combined turbulent + molecular wall fluxes
+            Real alpha_T_wall = dc.alpha_T;  // Thermal diffusivity [m^2/s]
+            Real alpha_C_wall = dc.alpha_C;  // Moisture diffusivity [m^2/s]
+            impose_WallFluxes_all_faces(level, mfs, Tau_lev,
+                                       Hfx1, Hfx2, Hfx3,
+                                       Q1fx1, Q1fx2, Q1fx3,
+                                       geom, wallflux_params, domain_bcs_type_h,
+                                       alpha_T_wall, alpha_C_wall);
+        }
     } // l_use_diff
 
     // This is just cautionary to deal with grid boundaries that aren't domain boundaries
@@ -621,9 +638,9 @@ void erf_slow_rhs_pre (int level, int finest_level,
                                        dxInv, SmnSmn_a,
                                        mf_mx, mf_ux, mf_vx,
                                        mf_my, mf_uy, mf_vy,
-                                       hfx_z, q1fx_z, q2fx_z, diss,
+                                       hfx_x, hfx_y, hfx_z, q1fx_x, q1fx_y, q1fx_z, q2fx_z, diss,
                                        mu_turb, solverChoice, level,
-                                       tm_arr, grav_gpu, bc_ptr_d, l_use_SurfLayer, l_vert_implicit_fac);
+                                       tm_arr, grav_gpu, bc_ptr_d, l_use_SurfLayer, solverChoice.use_wall_fluxes, l_vert_implicit_fac);
             }
         }
 

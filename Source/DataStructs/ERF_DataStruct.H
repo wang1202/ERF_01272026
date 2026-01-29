@@ -1036,6 +1036,22 @@ struct SolverChoice {
             query_name = "wetness." + face_name;
             pp_wf.query(query_name.c_str(), fp.wetness);
         }
+
+        // Sidewall pattern: "uniform" (default) or "two_layer"
+        std::string sidewall_pattern = "uniform";
+        pp_wf.query("sidewall_pattern", sidewall_pattern);
+
+        if (sidewall_pattern == "two_layer") {
+            wallflux_level.two_layer_sidewall = true;
+            pp_wf.get("sidewall_separation_height", wallflux_level.sidewall_separation_height);
+            pp_wf.get("T_wall_upper", wallflux_level.T_wall_upper);
+            pp_wf.get("T_wall_lower", wallflux_level.T_wall_lower);
+            pp_wf.get("wetness_upper", wallflux_level.wetness_upper);
+            pp_wf.get("wetness_lower", wallflux_level.wetness_lower);
+        } else if (sidewall_pattern != "uniform") {
+            amrex::Abort("Invalid wallflux.sidewall_pattern: " + sidewall_pattern +
+                         ". Valid options: uniform, two_layer");
+        }
     }
 
     void build_coriolis_forcings_const_lat (std::string pp_prefix)

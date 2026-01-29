@@ -57,6 +57,14 @@ struct WallFaceParams {
 struct WallFluxParams {
     bool enable{false};      ///< Enable wall flux application
     WallFaceParams face[6];  ///< Parameters for each face: xlo,xhi,ylo,yhi,zlo,zhi
+
+    // Two-layer sidewall pattern (applies to xlo, xhi, ylo, yhi only)
+    bool two_layer_sidewall{false};                    ///< Use height-dependent T_wall/wetness on side walls
+    amrex::Real sidewall_separation_height{0.0};       ///< Height separating upper/lower regions [m]
+    amrex::Real T_wall_upper{293.0};                   ///< Wall temperature for upper region [K]
+    amrex::Real wetness_upper{1.0};                    ///< Wall wetness for upper region [dimensionless]
+    amrex::Real T_wall_lower{293.0};                   ///< Wall temperature for lower region [K]
+    amrex::Real wetness_lower{1.0};                    ///< Wall wetness for lower region [dimensionless]
 };
 
 /**

@@ -234,6 +234,9 @@ void impose_WallFluxes_all_faces(
     const Real dy = dx_ptr[1];
     const Real dz = dx_ptr[2];
 
+    // Physical z-origin for two_layer sidewall pattern
+    const Real prob_lo_z = geom.ProbLo(2);
+
     // Check which momentum drag to apply per face based on BC types and face settings
     bool apply_momentum_drag[6];
     for (int face = 0; face < 6; ++face) {
@@ -325,10 +328,24 @@ void impose_WallFluxes_all_faces(
                                              zvel_arr(ii_p, jj,   kk) + zvel_arr(ii_p, jj,   kk_p) );
                     Real Ut = std::sqrt(vt*vt + wt*wt);
 
+                    // Determine effective T_wall and wetness (two_layer overrides face values)
+                    Real T_wall_eff = face_params.T_wall;
+                    Real wetness_eff = face_params.wetness;
+                    if (params.two_layer_sidewall) {
+                        Real z_cell = prob_lo_z + (kk + Real(0.5)) * dz;
+                        if (z_cell >= params.sidewall_separation_height) {
+                            T_wall_eff = params.T_wall_upper;
+                            wetness_eff = params.wetness_upper;
+                        } else {
+                            T_wall_eff = params.T_wall_lower;
+                            wetness_eff = params.wetness_lower;
+                        }
+                    }
+
                     // Shared thermodynamics: compute once for both heat and moisture
                     Real p_pa  = getPgivenRTh(rhotheta, qv);
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
-                    Real theta_wall = face_params.T_wall / exner;  // Convert T to θ
+                    Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
@@ -349,7 +366,7 @@ void impose_WallFluxes_all_faces(
                         hfx1_arr(i, j, k) = H;
                     }
                     if (do_qfx1) {
-                        Real q_wall = compute_qsat_wall(face_params.T_wall, p_pa, face_params.wetness);
+                        Real q_wall = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
                         Real turb_coeff = face_params.Cq * Ut;
                         Real molec_coeff = alpha_C / dx;
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
@@ -357,7 +374,7 @@ void impose_WallFluxes_all_faces(
                     }
                 });
             }
-            
+
             // X-hi face (face = 1) - right boundary wall
             if (tbx.bigEnd(0) == i_hi) {
                 auto slab = tbx; slab.setSmall(0, i_hi); slab.setBig(0, i_hi);
@@ -390,10 +407,24 @@ void impose_WallFluxes_all_faces(
                                              zvel_arr(ii_m, jj,   kk) + zvel_arr(ii_m, jj,   kk_p) );
                     Real Ut = std::sqrt(vt*vt + wt*wt);
 
+                    // Determine effective T_wall and wetness (two_layer overrides face values)
+                    Real T_wall_eff = face_params.T_wall;
+                    Real wetness_eff = face_params.wetness;
+                    if (params.two_layer_sidewall) {
+                        Real z_cell = prob_lo_z + (kk + Real(0.5)) * dz;
+                        if (z_cell >= params.sidewall_separation_height) {
+                            T_wall_eff = params.T_wall_upper;
+                            wetness_eff = params.wetness_upper;
+                        } else {
+                            T_wall_eff = params.T_wall_lower;
+                            wetness_eff = params.wetness_lower;
+                        }
+                    }
+
                     // Shared thermodynamics: compute once for both heat and moisture
                     Real p_pa  = getPgivenRTh(rhotheta, qv);
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
-                    Real theta_wall = face_params.T_wall / exner;  // Convert T to θ
+                    Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
@@ -414,7 +445,7 @@ void impose_WallFluxes_all_faces(
                         hfx1_arr(i, j, k) = H;
                     }
                     if (do_qfx1) {
-                        Real q_wall = compute_qsat_wall(face_params.T_wall, p_pa, face_params.wetness);
+                        Real q_wall = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
                         Real turb_coeff = face_params.Cq * Ut;
                         Real molec_coeff = alpha_C / dx;
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
@@ -423,7 +454,7 @@ void impose_WallFluxes_all_faces(
                 });
             }
         }
-        
+
         // Y-faces (2=ylo, 3=yhi) - process only if domain is not periodic in y
         if (!geom.isPeriodic(1)) {
             auto tby = mfi.nodaltilebox(1);
@@ -460,12 +491,26 @@ void impose_WallFluxes_all_faces(
                     Real wt = Real(0.25) * ( zvel_arr(ii,   jj,   kk) + zvel_arr(ii,   jj,   kk_p) +
                                              zvel_arr(ii,   jj_p, kk) + zvel_arr(ii,   jj_p, kk_p) );
                     Real Ut = std::sqrt(ut*ut + wt*wt);
-                    
+
+                    // Determine effective T_wall and wetness (two_layer overrides face values)
+                    Real T_wall_eff = face_params.T_wall;
+                    Real wetness_eff = face_params.wetness;
+                    if (params.two_layer_sidewall) {
+                        Real z_cell = prob_lo_z + (kk + Real(0.5)) * dz;
+                        if (z_cell >= params.sidewall_separation_height) {
+                            T_wall_eff = params.T_wall_upper;
+                            wetness_eff = params.wetness_upper;
+                        } else {
+                            T_wall_eff = params.T_wall_lower;
+                            wetness_eff = params.wetness_lower;
+                        }
+                    }
+
                     // Shared thermodynamics: compute once for both heat and moisture
                     Real p_pa  = getPgivenRTh(rhotheta, qv);
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
-                    Real theta_wall = face_params.T_wall / exner;  // Convert T to θ
-                    
+                    Real theta_wall = T_wall_eff / exner;  // Convert T to θ
+
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
                         Real tau_base = s * rho * face_params.Cm * Ut;
@@ -475,7 +520,7 @@ void impose_WallFluxes_all_faces(
                         if (have_tau12) tau12_arr(i, j, k) = Real(0.0);
                         if (have_tau32) tau32_arr(i, j, k) = Real(0.0);
                     }
-                    
+
                     // Scalar fluxes (heat and moisture)
                     // Combined turbulent + molecular: Flux = s * ρ * (Δφ) * (C*Ut + α/Δy)
                     if (do_hfx2) {
@@ -485,7 +530,7 @@ void impose_WallFluxes_all_faces(
                         hfx2_arr(i, j, k) = H;
                     }
                     if (do_qfx2) {
-                        Real q_wall = compute_qsat_wall(face_params.T_wall, p_pa, face_params.wetness);
+                        Real q_wall = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
                         Real turb_coeff = face_params.Cq * Ut;
                         Real molec_coeff = alpha_C / dy;
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
@@ -493,7 +538,7 @@ void impose_WallFluxes_all_faces(
                     }
                 });
             }
-            
+
             // Y-hi face (face = 3) - back/north boundary wall
             if (tby.bigEnd(1) == j_hi) {
                 auto slab = tby; slab.setSmall(1, j_hi); slab.setBig(1, j_hi);
@@ -526,12 +571,26 @@ void impose_WallFluxes_all_faces(
                     Real wt = Real(0.25) * ( zvel_arr(ii,   jj,   kk) + zvel_arr(ii,   jj,   kk_p) +
                                              zvel_arr(ii,   jj_m, kk) + zvel_arr(ii,   jj_m, kk_p) );
                     Real Ut = std::sqrt(ut*ut + wt*wt);
-                    
+
+                    // Determine effective T_wall and wetness (two_layer overrides face values)
+                    Real T_wall_eff = face_params.T_wall;
+                    Real wetness_eff = face_params.wetness;
+                    if (params.two_layer_sidewall) {
+                        Real z_cell = prob_lo_z + (kk + Real(0.5)) * dz;
+                        if (z_cell >= params.sidewall_separation_height) {
+                            T_wall_eff = params.T_wall_upper;
+                            wetness_eff = params.wetness_upper;
+                        } else {
+                            T_wall_eff = params.T_wall_lower;
+                            wetness_eff = params.wetness_lower;
+                        }
+                    }
+
                     // Shared thermodynamics: compute once for both heat and moisture
                     Real p_pa  = getPgivenRTh(rhotheta, qv);
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
-                    Real theta_wall = face_params.T_wall / exner;  // Convert T to θ
-                    
+                    Real theta_wall = T_wall_eff / exner;  // Convert T to θ
+
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
                         Real tau_base = s * rho * face_params.Cm * Ut;
@@ -541,7 +600,7 @@ void impose_WallFluxes_all_faces(
                         if (have_tau12) tau12_arr(i, j, k) = Real(0.0);
                         if (have_tau32) tau32_arr(i, j, k) = Real(0.0);
                     }
-                    
+
                     // Scalar fluxes (heat and moisture)
                     // Combined turbulent + molecular: Flux = s * ρ * (Δφ) * (C*Ut + α/Δy)
                     if (do_hfx2) {
@@ -551,7 +610,7 @@ void impose_WallFluxes_all_faces(
                         hfx2_arr(i, j, k) = H;
                     }
                     if (do_qfx2) {
-                        Real q_wall = compute_qsat_wall(face_params.T_wall, p_pa, face_params.wetness);
+                        Real q_wall = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
                         Real turb_coeff = face_params.Cq * Ut;
                         Real molec_coeff = alpha_C / dy;
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);

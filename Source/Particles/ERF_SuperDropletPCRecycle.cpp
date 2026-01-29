@@ -20,6 +20,10 @@ void SuperDropletPC::Recycle ( const int             a_lev,
 
     const auto num_sd_deactivated = NumSDDeactivated();
     const auto num_sd = NumSuperDroplets();
+
+    // Guard against division by zero when there are no super-droplets
+    if (num_sd == 0) { return; }
+
     const auto deac_frac = static_cast<Real>(num_sd_deactivated) / static_cast<Real>(num_sd);
 
     int flag = 0;
@@ -109,8 +113,8 @@ void SuperDropletPC::Recycle ( const int             a_lev,
         for (int i = 0; i < m_num_initializations; i++) {
             num_par_per_cell += m_initializations[i]->numParticlesPerCell(cell_volume);
         }
-        // average multiplicity
-        auto mult_avg = num_par_per_cell / num_sd_per_cell;
+        // average multiplicity (guard against division by zero)
+        auto mult_avg = (num_sd_per_cell > 0) ? num_par_per_cell / num_sd_per_cell : 1.0;
 
         Long np_recycle_total = 0;
 #ifdef AMREX_USE_OMP
@@ -223,7 +227,8 @@ void SuperDropletPC::Recycle ( const int             a_lev,
                     for (int ctr=0; ctr < multiplicity_h.size(); ctr++) {
                         mult_sum += multiplicity_h[ctr];
                     }
-                    mult_scale = np * mult_avg / mult_sum;
+                    // Guard against division by zero
+                    mult_scale = (mult_sum > 0.0) ? np * mult_avg / mult_sum : 1.0;
                     // copy to GPU
                     Gpu::copy( Gpu::hostToDevice,
                                multiplicity_h.begin(),

@@ -253,6 +253,9 @@ class SuperDropletsMoist : public NullMoistLagrangian {
             else                { computeQcSpecies(a_i); }
         }
 
+        /*! \brief Write domain-averaged time series of thermodynamic and microphysical properties */
+        void WriteDomainTimeSeries(const amrex::Real& a_time, const int& a_iter);
+
         /*! \brief compute total water mixing ratio */
         virtual void computeQtWater ();
 
@@ -452,6 +455,12 @@ class SuperDropletsMoist : public NullMoistLagrangian {
 
         /*! species index of water */
         int m_idx_w;
+
+        /*! domain time series output interval (0 = disabled) */
+        int m_domain_ts_interval;
+
+        /*! cutoff radius for domain time series droplet statistics */
+        amrex::Real m_domain_ts_radius_cutoff;
 
         /*! \brief read inputs */
         virtual void readInputs();

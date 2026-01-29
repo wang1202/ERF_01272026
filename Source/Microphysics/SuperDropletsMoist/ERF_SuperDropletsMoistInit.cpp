@@ -116,6 +116,14 @@ void SuperDropletsMoist::readInputs ()
     m_init_phase_change_time = 10.0; //default
     pp.query("initial_phase_change_relaxation_time", m_init_phase_change_time);
 
+    // domain time series output interval (0 = disabled)
+    m_domain_ts_interval = 0; //default: disabled
+    pp.query("domain_timeseries_interval", m_domain_ts_interval);
+
+    // cutoff radius for domain time series droplet statistics (default: 1 micron)
+    m_domain_ts_radius_cutoff = 1.0e-6; //default: 1 micrometer
+    pp.query("domain_timeseries_radius_cutoff", m_domain_ts_radius_cutoff);
+
     return;
 }
 

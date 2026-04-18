@@ -181,8 +181,12 @@ public:
     /*! \brief Fills in a MultiFab for plotting */
     virtual void GetPlotVar (const std::string& a_name,
                              amrex::MultiFab& a_mf,
-                             const int /* a_lev */) const override
+                             const int a_lev) const override
     {
+        if (a_lev > 0) {
+            a_mf.setVal(0.0);
+            return;
+        }
         m_moist_model->GetPlotVar(a_name, a_mf);
     }
 
@@ -191,6 +195,13 @@ public:
                             const amrex::Real dz_min) const override
     {
         m_moist_model->Set_dzmin(dz_min);
+    }
+
+    /*! \brief Populates real_width in micro model for box limiting */
+    virtual void Set_RealWidth (const int /*a_lev*/,
+                                const int real_width) const override
+    {
+        m_moist_model->Set_RealWidth(real_width);
     }
 
 protected:

@@ -1,6 +1,9 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
+erf.prob_name = "Bubble"
 max_step = 10
 stop_time = 5.0
+
+erf.init_type = Uniform
 
 amrex.fpe_trap_invalid = 1
 
@@ -15,9 +18,6 @@ geometry.is_periodic = 1 1 1
 # TIME STEP CONTROL
 erf.fixed_dt       = 0.0002     # fixed time step [s]
 erf.substepping_type = "None"
-
-# initialization type
-erf.init_type = "uniform"
 
 # DIAGNOSTICS & VERBOSITY
 erf.sum_interval   = 1       # timesteps between computing mass
@@ -72,19 +72,17 @@ erf.plot_vars_1     = density \
 
 # SOLVER CHOICES
 erf.use_gravity = false
-erf.use_coriolis = false
 
 # PHYSICS OPTIONS
 erf.les_type        = "None"
 erf.pbl_type        = "None"
 erf.moisture_model  = "SuperDroplets"
 erf.buoyancy_type   = 1
-erf.use_moist_background = true
 
 # Super Droplets Options
 super_droplets_moisture.stable_redistribute = true
 super_droplets_moisture.place_randomly_in_cells = false
-super_droplets_moisture.initial_distribution_type = "uniform"
+super_droplets_moisture.distribution_type = "uniform"
 super_droplets_moisture.diagnostics_interval = 1
 super_droplets_moisture.advect_with_flow = false
 super_droplets_moisture.advect_with_gravity = false

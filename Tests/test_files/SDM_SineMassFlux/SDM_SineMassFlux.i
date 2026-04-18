@@ -45,7 +45,6 @@ particles.disable_plt = true
 
 # SOLVER CHOICE
 erf.use_gravity = true
-erf.use_coriolis    = false
 
 erf.dycore_horiz_adv_type    = Upwind_3rd
 erf.dycore_vert_adv_type     = Upwind_3rd
@@ -66,7 +65,7 @@ erf.Sc_t      = 0.33333333333333
 #sdm parameters
 super_droplets_moisture.stable_redistribute = true
 super_droplets_moisture.place_randomly_in_cells = false
-super_droplets_moisture.initial_distribution_type = "uniform"
+super_droplets_moisture.distribution_type = "uniform"
 super_droplets_moisture.diagnostics_interval = 100
 super_droplets_moisture.include_coalescence = false
 super_droplets_moisture.prescribed_advection = true

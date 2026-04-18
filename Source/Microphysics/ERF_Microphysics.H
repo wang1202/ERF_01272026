@@ -91,6 +91,10 @@ public:
     virtual void Set_dzmin (const int lev,
                             const amrex::Real dz_min) const = 0;
 
+    /*! \brief Define the nudging+set width for real BCs */
+    virtual void Set_RealWidth (const int lev,
+                                const int real_width) const = 0;
+
     /*! \brief query if a specified moisture model is Eulerian or Lagrangian */
     static MoistureModelType modelType (const MoistureType a_moisture_type)
     {
@@ -99,6 +103,7 @@ public:
              || (a_moisture_type == MoistureType::SAM_NoPrecip_NoIce)
              || (a_moisture_type == MoistureType::Morrison)
              || (a_moisture_type == MoistureType::Morrison_NoIce)
+             || (a_moisture_type == MoistureType::WSM6)
              || (a_moisture_type == MoistureType::Kessler)
              || (a_moisture_type == MoistureType::Kessler_NoRain)
              || (a_moisture_type == MoistureType::SatAdj)

@@ -1,6 +1,10 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
+erf.prob_name = "Bubble"
+
 max_step  = 50
 stop_time = 3600.0
+
+erf.init_type = Isentropic
 
 amrex.fpe_trap_invalid = 1
 erf.fix_random_seed = 1
@@ -62,7 +66,6 @@ erf.plot_vars_1     = density \
 
 # SOLVER CHOICES
 erf.use_gravity          = true
-erf.use_coriolis         = false
 
 erf.dycore_horiz_adv_type    = "Upwind_3rd"
 erf.dycore_vert_adv_type     = "Upwind_3rd"
@@ -76,17 +79,15 @@ erf.les_type        = "None"
 erf.pbl_type        = "None"
 erf.moisture_model  = "SuperDroplets"
 erf.buoyancy_type   = 1
-erf.use_moist_background = false
 
 erf.molec_diff_type  = "ConstantAlpha"
 erf.rho0_trans       = 1.0 # [kg/m^3], used to convert input diffusivities
-erf.dynamicViscosity = 0.0 # [kg/(m-s)] ==> nu = 75.0 m^2/s
 erf.alpha_T          = 0.0 # [m^2/s]
 erf.alpha_C          = 0.0
 
 #sdm parameters
 super_droplets_moisture.stable_redistribute = true
-super_droplets_moisture.initial_distribution_type = "uniform"
+super_droplets_moisture.distribution_type = "uniform"
 super_droplets_moisture.diagnostics_interval = 1
 super_droplets_moisture.include_phase_change = false
 super_droplets_moisture.include_coalescence = false

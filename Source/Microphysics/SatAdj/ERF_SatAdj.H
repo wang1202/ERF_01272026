@@ -124,6 +124,9 @@ public:
         a_names.clear();
     }
 
+    void
+    Set_RealWidth (const int real_width) override { m_real_width = real_width; }
+
     AMREX_GPU_HOST_DEVICE
     AMREX_FORCE_INLINE
     static amrex::Real
@@ -135,7 +138,7 @@ public:
                    const amrex::Array4<amrex::Real>& qc_array)
     {
         // Solution tolerance
-        amrex::Real tol = 1.0e-8;
+        amrex::Real tol = amrex::Real(1.0e-8);
 
         // Saturation moisture fractions
         amrex::Real qsat, dqsat;
@@ -165,7 +168,7 @@ public:
             fff   = -tabs + tabs_array(i,j,k) + fac_cond*(qv_array(i,j,k) - qsat);
 
             // Derivative of function (T_new iterated on)
-            dfff  = -1.0 - fac_cond*dqsat;
+            dfff  = -one - fac_cond*dqsat;
 
             // Update the temperature
             dtabs = -fff/dfff;
@@ -198,6 +201,9 @@ private:
 
     // geometry
     amrex::Geometry m_geom;
+
+    // Nudging + set width
+    int m_real_width{0};
 
     // timestep
     amrex::Real dt;

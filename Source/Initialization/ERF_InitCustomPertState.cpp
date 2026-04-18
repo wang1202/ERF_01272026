@@ -42,6 +42,7 @@ ERF::init_custom (int lev)
     yvel_pert.setVal(0.);
     zvel_pert.setVal(0.);
 
+
 #ifdef _OPENMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -69,12 +70,49 @@ ERF::init_custom (int lev)
         Array4<Real> r_hse_arr = r_hse.array(mfi);
         Array4<Real> p_hse_arr = p_hse.array(mfi);
 
-        prob->init_custom_pert(bx, xbx, ybx, zbx, cons_arr, cons_pert_arr,
-                               xvel_pert_arr, yvel_pert_arr, zvel_pert_arr,
+        prob->init_custom_pert(bx, cons_arr, cons_pert_arr,
                                r_hse_arr, p_hse_arr, z_nd_arr, z_cc_arr,
-                               geom[lev].data(), mf_m, mf_u, mf_v,
-                               solverChoice, lev);
+                               geom[lev].data(), mf_m, solverChoice, lev);
+        prob->init_custom_pert_vels(xbx, ybx, zbx,
+                                    xvel_pert_arr, yvel_pert_arr, zvel_pert_arr,
+                                    z_nd_arr, geom[lev].data(), mf_u, mf_v,
+                                    solverChoice, lev);
+
+        // Zero out perturbations in covered cells in EB
+        if (solverChoice.terrain_type == TerrainType::EB) {
+
+            Array4<const EBCellFlag> c_cellflg = (get_eb(lev).get_const_factory())->getMultiEBCellFlagFab()[mfi].const_array();
+            Array4<const EBCellFlag> u_cellflg = (get_eb(lev).get_u_const_factory())->getMultiEBCellFlagFab()[mfi].const_array();
+            Array4<const EBCellFlag> v_cellflg = (get_eb(lev).get_v_const_factory())->getMultiEBCellFlagFab()[mfi].const_array();
+            Array4<const EBCellFlag> w_cellflg = (get_eb(lev).get_w_const_factory())->getMultiEBCellFlagFab()[mfi].const_array();
+
+            ParallelFor(bx,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                if (c_cellflg(i,j,k).isCovered()) {
+                    cons_pert_arr(i,j,k) = 0.0;
+                }
+            });
+
+            ParallelFor(xbx, ybx, zbx,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                if (u_cellflg(i,j,k).isCovered()) {
+                    xvel_pert_arr(i,j,k) = 0.0;
+                }
+            },
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                if (v_cellflg(i,j,k).isCovered()) {
+                    yvel_pert_arr(i,j,k) = 0.0;
+                }
+            },
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                if (w_cellflg(i,j,k).isCovered()) {
+                    zvel_pert_arr(i,j,k) = 0.0;
+                }
+            });
+        }
+
     } //mfi
+
 
     // Add problem-specific perturbation to background flow if not doing anelastic with fixed-in-time density
     if (!solverChoice.fixed_density[lev]) {
@@ -96,7 +134,28 @@ ERF::init_custom (int lev)
         }
     }
 
-    MultiFab::Add(lev_new[Vars::xvel], xvel_pert, 0,             0,             1, xvel_pert.nGrowVect());
-    MultiFab::Add(lev_new[Vars::yvel], yvel_pert, 0,             0,             1, yvel_pert.nGrowVect());
-    MultiFab::Add(lev_new[Vars::zvel], zvel_pert, 0,             0,             1, zvel_pert.nGrowVect());
+    // Should we initialize the velocities from a checkpoint file?
+    static std::string init_vels_from_checkpoint;
+    ParmParse pp("erf");
+    if (pp.query("init_vels_from_checkpoint",init_vels_from_checkpoint)) {
+        ReadVelsOnlyFromCheckpointFile(lev,init_vels_from_checkpoint);
+    } else {
+        MultiFab::Add(lev_new[Vars::xvel], xvel_pert, 0,             0,             1, xvel_pert.nGrowVect());
+        MultiFab::Add(lev_new[Vars::yvel], yvel_pert, 0,             0,             1, yvel_pert.nGrowVect());
+        MultiFab::Add(lev_new[Vars::zvel], zvel_pert, 0,             0,             1, zvel_pert.nGrowVect());
+    }
+
+    // If initializing for ensemble simluations, then
+    // 1. Create cell-centered random perturbations
+    // 2. Create cell-centered spatially correlated perturbations
+    // 3. Read in the coarse background state from the coarse data file,
+    //    interpolate the state data onto the current mesh, and
+    //    add the perturbations to the background state and then populate the "pert variables
+
+    if(solverChoice.is_init_for_ensemble) {
+        MultiFab mf_cc_pert;
+        create_random_perturbations(lev, mf_cc_pert);
+        apply_gaussian_smoothing_to_perturbations(lev, mf_cc_pert);
+        create_background_state_for_ensemble(lev, mf_cc_pert, lev_new[Vars::cons], lev_new[Vars::xvel], lev_new[Vars::yvel], lev_new[Vars::zvel]);
+    }
 }

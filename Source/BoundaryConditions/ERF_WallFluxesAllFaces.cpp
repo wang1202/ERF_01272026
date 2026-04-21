@@ -36,6 +36,7 @@
  */
 
 #include "ERF_WallFluxesAllFaces.H"
+#include "ERF_PAFNN_WallModel.H"
 #include "ERF_IndexDefines.H"
 #include "ERF_Utils.H"
 #include "ERF_EOS.H"
@@ -246,6 +247,7 @@ void impose_WallFluxes_all_faces(
     
     // Pre-compute has_qv flag for device kernels (moisture transport enabled?)
     bool has_qv = (cons_mf.nComp() > RhoQ1_comp);
+    const bool use_pafnn = params.use_pafnn;
     
     // Capture boolean flags for Array4 nullptr checks (Array4 has no boolean conversion)
     const bool do_hfx1 = (Hfx1 != nullptr);
@@ -347,6 +349,33 @@ void impose_WallFluxes_all_faces(
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
                     Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
+                    // Wall-normal velocity for PAFNN
+                    Real un_pafnn = xvel_arr(i, j, k);
+
+                    if (use_pafnn) {
+                        Real T_air = theta * exner;
+                        Real DT_pafnn = T_wall_eff - T_air;
+                        Real q_wall_pafnn = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
+                        Real DQ_pafnn = q_wall_pafnn - qv;
+                        Real h_pafnn = Real(0.5) * dx;
+
+                        amrex::Real tau_kin, H_kin, E_kin;
+                        PAFNN::pafnn_sw_fluxes(Ut, un_pafnn, DT_pafnn, DQ_pafnn, h_pafnn,
+                                               tau_kin, H_kin, E_kin);
+
+                        if (apply_mom_drag && Ut > Real(1e-10)) {
+                            Real tau_rho = s * rho * tau_kin;
+                            if (have_tau21) tau21_arr(i, j, k) = -tau_rho * vt / Ut;
+                            if (have_tau31) tau31_arr(i, j, k) = -tau_rho * wt / Ut;
+                        } else {
+                            if (have_tau21) tau21_arr(i, j, k) = Real(0.0);
+                            if (have_tau31) tau31_arr(i, j, k) = Real(0.0);
+                        }
+                        if (do_hfx1) hfx1_arr(i, j, k) = s * rho * H_kin / exner;
+                        if (do_qfx1) q1fx1_arr(i, j, k) = s * rho * E_kin;
+                    } else {
+
+
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
                         Real tau_base = s * rho * face_params.Cm * Ut;
@@ -372,6 +401,7 @@ void impose_WallFluxes_all_faces(
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx1_arr(i, j, k) = Q;
                     }
+                    } // end else (bulk coefficients)
                 });
             }
 
@@ -426,6 +456,33 @@ void impose_WallFluxes_all_faces(
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
                     Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
+                    // Wall-normal velocity for PAFNN
+                    Real un_pafnn = xvel_arr(i, j, k);
+
+                    if (use_pafnn) {
+                        Real T_air = theta * exner;
+                        Real DT_pafnn = T_wall_eff - T_air;
+                        Real q_wall_pafnn = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
+                        Real DQ_pafnn = q_wall_pafnn - qv;
+                        Real h_pafnn = Real(0.5) * dx;
+
+                        amrex::Real tau_kin, H_kin, E_kin;
+                        PAFNN::pafnn_sw_fluxes(Ut, un_pafnn, DT_pafnn, DQ_pafnn, h_pafnn,
+                                               tau_kin, H_kin, E_kin);
+
+                        if (apply_mom_drag && Ut > Real(1e-10)) {
+                            Real tau_rho = s * rho * tau_kin;
+                            if (have_tau21) tau21_arr(i, j, k) = -tau_rho * vt / Ut;
+                            if (have_tau31) tau31_arr(i, j, k) = -tau_rho * wt / Ut;
+                        } else {
+                            if (have_tau21) tau21_arr(i, j, k) = Real(0.0);
+                            if (have_tau31) tau31_arr(i, j, k) = Real(0.0);
+                        }
+                        if (do_hfx1) hfx1_arr(i, j, k) = s * rho * H_kin / exner;
+                        if (do_qfx1) q1fx1_arr(i, j, k) = s * rho * E_kin;
+                    } else {
+
+
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
                         Real tau_base = s * rho * face_params.Cm * Ut;
@@ -451,6 +508,7 @@ void impose_WallFluxes_all_faces(
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx1_arr(i, j, k) = Q;
                     }
+                    } // end else (bulk coefficients)
                 });
             }
         }
@@ -511,6 +569,33 @@ void impose_WallFluxes_all_faces(
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
                     Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
+                    // Wall-normal velocity for PAFNN
+                    Real un_pafnn = yvel_arr(i, j, k);
+
+                    if (use_pafnn) {
+                        Real T_air = theta * exner;
+                        Real DT_pafnn = T_wall_eff - T_air;
+                        Real q_wall_pafnn = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
+                        Real DQ_pafnn = q_wall_pafnn - qv;
+                        Real h_pafnn = Real(0.5) * dy;
+
+                        amrex::Real tau_kin, H_kin, E_kin;
+                        PAFNN::pafnn_sw_fluxes(Ut, un_pafnn, DT_pafnn, DQ_pafnn, h_pafnn,
+                                               tau_kin, H_kin, E_kin);
+
+                        if (apply_mom_drag && Ut > Real(1e-10)) {
+                            Real tau_rho = s * rho * tau_kin;
+                            if (have_tau12) tau12_arr(i, j, k) = -tau_rho * ut / Ut;
+                            if (have_tau32) tau32_arr(i, j, k) = -tau_rho * wt / Ut;
+                        } else {
+                            if (have_tau12) tau12_arr(i, j, k) = Real(0.0);
+                            if (have_tau32) tau32_arr(i, j, k) = Real(0.0);
+                        }
+                        if (do_hfx2) hfx2_arr(i, j, k) = s * rho * H_kin / exner;
+                        if (do_qfx2) q1fx2_arr(i, j, k) = s * rho * E_kin;
+                    } else {
+
+
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
                         Real tau_base = s * rho * face_params.Cm * Ut;
@@ -536,6 +621,7 @@ void impose_WallFluxes_all_faces(
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx2_arr(i, j, k) = Q;
                     }
+                    } // end else (bulk coefficients)
                 });
             }
 
@@ -591,6 +677,33 @@ void impose_WallFluxes_all_faces(
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
                     Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
+                    // Wall-normal velocity for PAFNN
+                    Real un_pafnn = yvel_arr(i, j, k);
+
+                    if (use_pafnn) {
+                        Real T_air = theta * exner;
+                        Real DT_pafnn = T_wall_eff - T_air;
+                        Real q_wall_pafnn = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
+                        Real DQ_pafnn = q_wall_pafnn - qv;
+                        Real h_pafnn = Real(0.5) * dy;
+
+                        amrex::Real tau_kin, H_kin, E_kin;
+                        PAFNN::pafnn_sw_fluxes(Ut, un_pafnn, DT_pafnn, DQ_pafnn, h_pafnn,
+                                               tau_kin, H_kin, E_kin);
+
+                        if (apply_mom_drag && Ut > Real(1e-10)) {
+                            Real tau_rho = s * rho * tau_kin;
+                            if (have_tau12) tau12_arr(i, j, k) = -tau_rho * ut / Ut;
+                            if (have_tau32) tau32_arr(i, j, k) = -tau_rho * wt / Ut;
+                        } else {
+                            if (have_tau12) tau12_arr(i, j, k) = Real(0.0);
+                            if (have_tau32) tau32_arr(i, j, k) = Real(0.0);
+                        }
+                        if (do_hfx2) hfx2_arr(i, j, k) = s * rho * H_kin / exner;
+                        if (do_qfx2) q1fx2_arr(i, j, k) = s * rho * E_kin;
+                    } else {
+
+
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
                         Real tau_base = s * rho * face_params.Cm * Ut;
@@ -616,6 +729,7 @@ void impose_WallFluxes_all_faces(
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx2_arr(i, j, k) = Q;
                     }
+                    } // end else (bulk coefficients)
                 });
             }
         }
@@ -661,6 +775,39 @@ void impose_WallFluxes_all_faces(
                     Real p_pa  = getPgivenRTh(rhotheta, qv);
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
                     Real theta_wall = face_params.T_wall / exner;  // Convert T to θ
+
+                    // Wall-normal velocity for PAFNN
+                    Real un_pafnn = zvel_arr(i, j, k);
+
+                    if (use_pafnn) {
+                        Real T_air = theta * exner;
+                        Real DT_pafnn = T_air < face_params.T_wall ? face_params.T_wall - T_air : T_air - face_params.T_wall;
+                        Real q_wall_pafnn = compute_qsat_wall(face_params.T_wall, p_pa, face_params.wetness);
+                        Real DQ_pafnn = qv < q_wall_pafnn ? q_wall_pafnn - qv : qv - q_wall_pafnn;
+                        Real h_pafnn = Real(0.5) * dz;
+
+                        DT_pafnn = amrex::max(DT_pafnn, Real(1e-5));
+                        DQ_pafnn = amrex::max(DQ_pafnn, Real(1e-12));
+
+                        amrex::Real tau_kin, H_kin, E_kin;
+                        PAFNN::pafnn_bt_fluxes(Ut, un_pafnn, DT_pafnn, DQ_pafnn, h_pafnn,
+                                               tau_kin, H_kin, E_kin);
+
+                        Real sign_DT = (face_params.T_wall >= T_air) ? Real(1.0) : Real(-1.0);
+                        Real sign_DQ = (q_wall_pafnn >= qv) ? Real(1.0) : Real(-1.0);
+
+                        if (apply_mom_drag && Ut > Real(1e-10)) {
+                            Real tau_rho = s * rho * tau_kin;
+                            if (have_tau13) tau13_arr(i, j, k) = -tau_rho * ut / Ut;
+                            if (have_tau23) tau23_arr(i, j, k) = -tau_rho * vt / Ut;
+                        } else {
+                            if (have_tau13) tau13_arr(i, j, k) = Real(0.0);
+                            if (have_tau23) tau23_arr(i, j, k) = Real(0.0);
+                        }
+                        if (do_hfx3) hfx3_arr(i, j, k) = s * rho * sign_DT * H_kin / exner;
+                        if (do_qfx3) q1fx3_arr(i, j, k) = s * rho * sign_DQ * E_kin;
+                    } else {
+
                     
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
@@ -687,6 +834,7 @@ void impose_WallFluxes_all_faces(
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx3_arr(i, j, k) = Q;
                     }
+                    } // end else (bulk coefficients)
                 });
             }
             
@@ -727,6 +875,39 @@ void impose_WallFluxes_all_faces(
                     Real p_pa  = getPgivenRTh(rhotheta, qv);
                     Real exner = getExnergivenP(p_pa, R_d / Cp_d);
                     Real theta_wall = face_params.T_wall / exner;  // Convert T to θ
+
+                    // Wall-normal velocity for PAFNN
+                    Real un_pafnn = zvel_arr(i, j, k);
+
+                    if (use_pafnn) {
+                        Real T_air = theta * exner;
+                        Real DT_pafnn = T_air < face_params.T_wall ? face_params.T_wall - T_air : T_air - face_params.T_wall;
+                        Real q_wall_pafnn = compute_qsat_wall(face_params.T_wall, p_pa, face_params.wetness);
+                        Real DQ_pafnn = qv < q_wall_pafnn ? q_wall_pafnn - qv : qv - q_wall_pafnn;
+                        Real h_pafnn = Real(0.5) * dz;
+
+                        DT_pafnn = amrex::max(DT_pafnn, Real(1e-5));
+                        DQ_pafnn = amrex::max(DQ_pafnn, Real(1e-12));
+
+                        amrex::Real tau_kin, H_kin, E_kin;
+                        PAFNN::pafnn_bt_fluxes(Ut, un_pafnn, DT_pafnn, DQ_pafnn, h_pafnn,
+                                               tau_kin, H_kin, E_kin);
+
+                        Real sign_DT = (face_params.T_wall >= T_air) ? Real(1.0) : Real(-1.0);
+                        Real sign_DQ = (q_wall_pafnn >= qv) ? Real(1.0) : Real(-1.0);
+
+                        if (apply_mom_drag && Ut > Real(1e-10)) {
+                            Real tau_rho = s * rho * tau_kin;
+                            if (have_tau13) tau13_arr(i, j, k) = -tau_rho * ut / Ut;
+                            if (have_tau23) tau23_arr(i, j, k) = -tau_rho * vt / Ut;
+                        } else {
+                            if (have_tau13) tau13_arr(i, j, k) = Real(0.0);
+                            if (have_tau23) tau23_arr(i, j, k) = Real(0.0);
+                        }
+                        if (do_hfx3) hfx3_arr(i, j, k) = s * rho * sign_DT * H_kin / exner;
+                        if (do_qfx3) q1fx3_arr(i, j, k) = s * rho * sign_DQ * E_kin;
+                    } else {
+
                     
                     // Momentum fluxes (tangential stresses)
                     if (apply_mom_drag && Ut > Real(1e-10)) {
@@ -753,6 +934,7 @@ void impose_WallFluxes_all_faces(
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx3_arr(i, j, k) = Q;
                     }
+                    } // end else (bulk coefficients)
                 });
             }
         }

@@ -1004,10 +1004,18 @@ struct SolverChoice {
         {
             amrex::ParmParse pp_erf("erf");
             pp_erf.query("use_wall_fluxes", use_wall_fluxes);
+            pp_erf.query("wall_fluxes_chamber_pann", use_pafnn_wall_model);
+            if (use_pafnn_wall_model) {
+                use_wall_fluxes = true;  // PAFNN implies wall fluxes
+            }
             if (use_wall_fluxes) {
                 wallflux_params.resize(max_level + 1);
                 for (int lev = 0; lev <= max_level; lev++) {
                     init_wallflux_params_level(wallflux_params[lev], pp_prefix, lev);
+                    if (use_pafnn_wall_model) {
+                        wallflux_params[lev].use_pafnn = true;
+                        wallflux_params[lev].enable = true;
+                    }
                 }
             }
         }
@@ -1415,6 +1423,7 @@ struct SolverChoice {
 
     // Enables heat/moisture exchange on all domain faces (cloud chamber applications)
     bool use_wall_fluxes = false;                   ///< Enable wall flux boundary conditions
+    bool use_pafnn_wall_model = false;               ///< Use PAFNN neural network wall model (erf.wall_fluxes_chamber_pann)
     amrex::Vector<WallFluxParams> wallflux_params;  ///< Per-level wall flux parameters
 
     bool is_init_for_ensemble = false;

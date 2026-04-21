@@ -58,6 +58,8 @@ struct WallFluxParams {
     bool enable{false};      ///< Enable wall flux application
     WallFaceParams face[6];  ///< Parameters for each face: xlo,xhi,ylo,yhi,zlo,zhi
 
+    bool use_pafnn{false};    ///< Use PAFNN neural network wall model instead of bulk coefficients
+
     // Two-layer sidewall pattern (applies to xlo, xhi, ylo, yhi only)
     bool two_layer_sidewall{false};                    ///< Use height-dependent T_wall/wetness on side walls
     amrex::Real sidewall_separation_height{0.0};       ///< Height separating upper/lower regions [m]

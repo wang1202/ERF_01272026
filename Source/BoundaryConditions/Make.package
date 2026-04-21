@@ -24,3 +24,7 @@ CEXE_headers += ERF_MOSTAverage.H
 CEXE_sources += ERF_MOSTAverage.cpp
 
 CEXE_headers += ERF_MOSTStress.H
+
+CEXE_headers += ERF_WallFluxesAllFaces.H
+CEXE_sources += ERF_WallFluxesAllFaces.cpp
+CEXE_headers += ERF_PAFNN_WallModel.H

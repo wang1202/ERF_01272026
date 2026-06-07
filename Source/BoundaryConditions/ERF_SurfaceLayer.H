@@ -148,7 +148,10 @@ public:
           if (erf_st) {
               theta_type = ThetaCalcType::SURFACE_TEMPERATURE;
               pp.query("most.surf_heating_rate", surf_heating_rate); // [K/h]
-              surf_heating_rate = surf_heating_rate / amrex::Real(3600.0);        // [K/s]
+
+              // Modify rate to be in units of K / s rather than K / hr
+              surf_heating_rate /= amrex::Real(3600.0);        // [K/s]
+
               if (pp.query("most.surf_temp_flux", surf_temp_flux)) {
                   amrex::Abort("Can only specify one of surf_temp_flux or surf_heating_rate");
               }
@@ -368,10 +371,14 @@ public:
               m_lsm_tsurf_indx = n;
           }
       }
+      int n_valid_lsm_flux = 0;
       for (int n(0); n < nflux; ++n) {
           m_lsm_flux_name[n]     = lsm_flux_name[n];
           m_lsm_flux_lev[lev][n] = lsm_flux[n];
+          if (m_lsm_flux_lev[lev][n]) { ++n_valid_lsm_flux; }
       }
+      AMREX_ALWAYS_ASSERT((n_valid_lsm_flux==0 || n_valid_lsm_flux>=4));
+      if (n_valid_lsm_flux>=4) { m_has_lsm_fluxes = true; }
 
       // Check if there is a user-specified roughness file to be read
       std::string fname;
@@ -417,22 +424,22 @@ public:
       // 2D MFs for U*, T*, T_surf
       //--------------------------------------------------------
       u_star[lev] = std::make_unique<amrex::MultiFab>(ba2d, dm, ncomp, ng);
-      u_star[lev]->setVal(1.E34);
+      u_star[lev]->setVal(amrex::Real(1.e34));
 
       w_star[lev] = std::make_unique<amrex::MultiFab>(ba2d, dm, ncomp, ng);
-      w_star[lev]->setVal(1.E34);
+      w_star[lev]->setVal(amrex::Real(1.e34));
 
       t_star[lev] = std::make_unique<amrex::MultiFab>(ba2d, dm, ncomp, ng);
-      t_star[lev]->setVal(0.0); // default to neutral
+      t_star[lev]->setVal(zero); // default to neutral
 
       q_star[lev] = std::make_unique<amrex::MultiFab>(ba2d, dm, ncomp, ng);
-      q_star[lev]->setVal(0.0); // default to dry
+      q_star[lev]->setVal(zero); // default to dry
 
       olen[lev] = std::make_unique<amrex::MultiFab>(ba2d, dm, ncomp, ng);
-      olen[lev]->setVal(1.E34);
+      olen[lev]->setVal(amrex::Real(1.e34));
 
       pblh[lev] = std::make_unique<amrex::MultiFab>(ba2d, dm, ncomp, ng);
-      pblh[lev]->setVal(1.E34);
+      pblh[lev]->setVal(amrex::Real(1.e34));
 
       t_surf[lev] = std::make_unique<amrex::MultiFab>(ba2d, dm, ncomp, ng);
       t_surf[lev]->setVal(default_land_surf_temp);
@@ -472,6 +479,7 @@ public:
 
   void
   update_fluxes (const int& lev,
+                 const amrex::Real& elapsed_time,
                  const amrex::Real& elapsed_time_since_start_low,
                  amrex::MultiFab& cons_in,
                  const std::unique_ptr<amrex::MultiFab>& z_phys_nd,
@@ -503,15 +511,15 @@ public:
                                 const amrex::MultiFab* z_phys);
 
   void impose_SurfaceLayer_bcs_EB (const int& lev,
-                                amrex::Vector<const amrex::MultiFab*> mfs,
-                                amrex::Vector<std::unique_ptr<amrex::MultiFab>>& Tau_lev,
-                                amrex::MultiFab* xheat_flux,
-                                amrex::MultiFab* yheat_flux,
-                                amrex::MultiFab* zheat_flux,
-                                amrex::MultiFab* xqv_flux,
-                                amrex::MultiFab* yqv_flux,
-                                amrex::MultiFab* zqv_flux,
-                                const eb_& ebfact);
+                                   amrex::Vector<const amrex::MultiFab*> mfs,
+                                   amrex::Vector<std::unique_ptr<amrex::MultiFab>>& Tau_lev,
+                                   amrex::MultiFab* xheat_flux,
+                                   amrex::MultiFab* yheat_flux,
+                                   amrex::MultiFab* zheat_flux,
+                                   amrex::MultiFab* xqv_flux,
+                                   amrex::MultiFab* yqv_flux,
+                                   amrex::MultiFab* zqv_flux,
+                                   const eb_& ebfact);
   template <typename FluxCalc>
   void compute_SurfaceLayer_bcs (const int& lev,
                                  amrex::Vector<const amrex::MultiFab*> mfs,
@@ -527,16 +535,19 @@ public:
 
   template <typename FluxCalc>
   void compute_SurfaceLayer_bcs_EB (const int& lev,
-                                 amrex::Vector<const amrex::MultiFab*> mfs,
-                                 amrex::Vector<std::unique_ptr<amrex::MultiFab>>& Tau_lev,
-                                 amrex::MultiFab* xheat_flux,
-                                 amrex::MultiFab* yheat_flux,
-                                 amrex::MultiFab* zheat_flux,
-                                 amrex::MultiFab* xqv_flux,
-                                 amrex::MultiFab* yqv_flux,
-                                 amrex::MultiFab* zqv_flux,
-                                 const eb_& ebfact,
-                                 const FluxCalc& flux_comp);
+                                    amrex::Vector<const amrex::MultiFab*> mfs,
+                                    amrex::Vector<std::unique_ptr<amrex::MultiFab>>& Tau_lev,
+                                    amrex::MultiFab* xheat_flux,
+                                    amrex::MultiFab* yheat_flux,
+                                    amrex::MultiFab* zheat_flux,
+                                    amrex::MultiFab* xqv_flux,
+                                    amrex::MultiFab* yqv_flux,
+                                    amrex::MultiFab* zqv_flux,
+                                    const eb_& ebfact,
+                                    const FluxCalc& flux_comp);
+
+  void compute_sfc_params_from_lsm_fluxes(const int& lev,
+                                          amrex::MultiFab& cons_in);
 
   void fill_tsurf_with_sst_and_tsk (const int& lev,
                                     const amrex::Real& time);
@@ -713,6 +724,7 @@ private:
   amrex::Real rico_qsat_z0{amrex::Real(0.001)};
 
   bool use_moisture;
+  bool m_has_lsm_fluxes = false;
   bool m_has_lsm_tsurf  = false;
   int  m_lsm_tsurf_indx = -1;
 

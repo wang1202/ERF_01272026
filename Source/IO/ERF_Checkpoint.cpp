@@ -185,7 +185,7 @@ ERF::WriteCheckpointFile () const
         std::vector<int> qmoist_indices;
         std::vector<std::string> qmoist_names;
         micro->Get_Qmoist_Restart_Vars(lev, solverChoice, qmoist_indices, qmoist_names);
-        int qmoist_nvar = qmoist_indices.size();
+        int qmoist_nvar = static_cast<int>(qmoist_indices.size());
         for (int var = 0; var < qmoist_nvar; var++) {
             const int ncomp  = 1;
             IntVect ng_moist = qmoist[lev][qmoist_indices[var]]->nGrowVect();
@@ -387,19 +387,24 @@ ERF::WriteCheckpointFile () const
 
         if (solverChoice.use_real_bcs && solverChoice.init_type == InitType::WRFInput) {
             if (lev == 0) {
-                amrex::Print() << "Writing C1H/C2H/MUB variables at level " << lev << std::endl;
+                amrex::Print() << "Writing C1H/C2H/MUB/PHB variables at level " << lev << std::endl;
                 MultiFab tmp1d(ba1d[0],dmap[0],1,0);
 
-                MultiFab::Copy(tmp1d,*mf_C1H,0,0,1,0);
+                MultiFab::Copy(tmp1d,*wrf_C1H,0,0,1,0);
                 VisMF::Write(tmp1d, MultiFabFileFullPrefix(lev, checkpointname, "Level_", "C1H"));
 
-                MultiFab::Copy(tmp1d,*mf_C2H,0,0,1,0);
+                MultiFab::Copy(tmp1d,*wrf_C2H,0,0,1,0);
                 VisMF::Write(tmp1d, MultiFabFileFullPrefix(lev, checkpointname, "Level_", "C2H"));
 
-                MultiFab tmp2d(ba2d[0],dmap[0],1,mf_MUB->nGrowVect());
+                MultiFab tmp2d(ba2d[0],dmap[0],1,wrf_MUB->nGrowVect());
 
-                MultiFab::Copy(tmp2d,*mf_MUB,0,0,1,mf_MUB->nGrowVect());
+                MultiFab::Copy(tmp2d,*wrf_MUB,0,0,1,wrf_MUB->nGrowVect());
                 VisMF::Write(tmp2d, MultiFabFileFullPrefix(lev, checkpointname, "Level_", "MUB"));
+
+                ng = IntVect(1,1,0);
+                MultiFab tmp3d(convert(grids[0],IntVect(0,0,1)),dmap[0],1,ng);
+                MultiFab::Copy(tmp3d,*wrf_PHB,0,0,1,ng);
+                VisMF::Write(tmp3d, MultiFabFileFullPrefix(lev, checkpointname, "Level_", "PHB"));
             }
         }
 #endif
@@ -526,7 +531,7 @@ ERF::ReadCheckpointFile ()
         std::istringstream lis(line);
         int i = 0;
         while (lis >> word) {
-            dt[i++] = std::stod(word);
+            dt[i++] = static_cast<Real>(std::stod(word));
         }
     }
 
@@ -536,7 +541,7 @@ ERF::ReadCheckpointFile ()
         std::istringstream lis(line);
         int i = 0;
         while (lis >> word) {
-            t_new[i++] = std::stod(word);
+            t_new[i++] = static_cast<Real>(std::stod(word));
         }
     }
 
@@ -728,7 +733,7 @@ ERF::ReadCheckpointFile ()
         std::vector<int> qmoist_indices;
         std::vector<std::string> qmoist_names;
         micro->Get_Qmoist_Restart_Vars(lev, solverChoice, qmoist_indices, qmoist_names);
-        int qmoist_nvar = qmoist_indices.size();
+        int qmoist_nvar = static_cast<int>(qmoist_indices.size());
         for (int var = 0; var < qmoist_nvar; var++) {
             const int ncomp  = 1;
             IntVect ng_moist = qmoist[lev][qmoist_indices[var]]->nGrowVect();
@@ -943,18 +948,25 @@ ERF::ReadCheckpointFile ()
 
         if (solverChoice.use_real_bcs && solverChoice.init_type == InitType::WRFInput) {
             if (lev == 0) {
+                amrex::Print() << "Reading C1H/C2H/MUB/PHB variables at level " << lev << std::endl;
                 MultiFab tmp1d(ba1d[0],dmap[0],1,0);
 
                 VisMF::Read(tmp1d, MultiFabFileFullPrefix(lev, restart_chkfile, "Level_", "C1H"));
-                MultiFab::Copy(*mf_C1H,tmp1d,0,0,1,0);
+                MultiFab::Copy(*wrf_C1H,tmp1d,0,0,1,0);
 
                 VisMF::Read(tmp1d, MultiFabFileFullPrefix(lev, restart_chkfile, "Level_", "C2H"));
-                MultiFab::Copy(*mf_C2H,tmp1d,0,0,1,0);
+                MultiFab::Copy(*wrf_C2H,tmp1d,0,0,1,0);
 
-                MultiFab tmp2d(ba2d[0],dmap[0],1,mf_MUB->nGrowVect());
+                MultiFab tmp2d(ba2d[0],dmap[0],1,wrf_MUB->nGrowVect());
 
                 VisMF::Read(tmp2d, MultiFabFileFullPrefix(lev, restart_chkfile, "Level_", "MUB"));
-                MultiFab::Copy(*mf_MUB,tmp2d,0,0,1,mf_MUB->nGrowVect());
+                MultiFab::Copy(*wrf_MUB,tmp2d,0,0,1,wrf_MUB->nGrowVect());
+
+                ng = IntVect(1,1,0);
+                MultiFab tmp3d(convert(grids[0],IntVect(0,0,1)),dmap[0],1,ng);
+                wrf_PHB = std::make_unique<MultiFab>(convert(grids[0],IntVect(0,0,1)),dmap[0],1,ng);
+                VisMF::Read(tmp3d, MultiFabFileFullPrefix(lev, restart_chkfile, "Level_", "PHB"));
+                MultiFab::Copy(*wrf_PHB,tmp3d,0,0,1,ng);
             }
         }
 #endif

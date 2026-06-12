@@ -113,6 +113,7 @@ public:
              || (a_moisture_type == MoistureType::Kessler)
              || (a_moisture_type == MoistureType::Kessler_NoRain)
              || (a_moisture_type == MoistureType::SatAdj)
+             || (a_moisture_type == MoistureType::MoistNoCondensation)
              || (a_moisture_type == MoistureType::None) ) {
             return MoistureModelType::Eulerian;
         } else if ( (a_moisture_type == MoistureType::SuperDroplets) ) {

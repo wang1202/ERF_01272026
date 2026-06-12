@@ -52,6 +52,9 @@ public:
     /*! \brief update microphysics variables from ERF state variables */
     virtual void Update_Micro_Vars_Lev (const int&, amrex::MultiFab&) = 0;
 
+    /*! \brief provide the (time-independent) base state for a level (default no-op) */
+    virtual void Set_Base_State (const int&, const amrex::MultiFab&) { }
+
     /*! \brief update ERF state variables from microphysics variables */
     virtual void Update_State_Vars_Lev (const int&, amrex::MultiFab&, const amrex::MultiFab&) = 0;
 

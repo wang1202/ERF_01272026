@@ -169,13 +169,34 @@ void SuperDropletsMoist::phaseChange ( const Real& a_dt,
                     const Array4<Real const>& theta_arr = m_mic_fab_vars[a_lev][MicVar_SD::theta]->const_array(mfi);
                     const Array4<Real const>& qv_arr = qvw_ptr->const_array(mfi);
 
+                    // ANELASTIC: the thermodynamic state is the hydrostatic base, so the physical
+                    // temperature/pressure for saturation are T = theta*pi0(z), p = p0(z). Using the
+                    // theta-coupled compressible EOS (getTgivenRandRTh/getPgivenRTh) inflates T in
+                    // warm/moist cells and depresses qsat-based supersaturation in the updraft streaks.
+                    const bool l_anelastic = (m_anelastic && a_lev < static_cast<int>(m_base_state.size())
+                                              && m_base_state[a_lev]);
+                    const Array4<Real const> base_arr = l_anelastic ? m_base_state[a_lev]->const_array(mfi)
+                                                                    : Array4<Real const>{};
+                    const Dim3 blo = l_anelastic ? amrex::lbound(base_arr) : Dim3{0,0,0};
+                    const Dim3 bhi = l_anelastic ? amrex::ubound(base_arr) : Dim3{0,0,0};
+
                     ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
                     {
-                        t_arr(i,j,k,0) = getTgivenRandRTh(  rho_arr(i,j,k,0),
-                                                            rho_arr(i,j,k,0)*theta_arr(i,j,k,0),
-                                                            qv_arr(i,j,k,0));
-                        p_arr(i,j,k,0) = getPgivenRTh(  rho_arr(i,j,k,0)*theta_arr(i,j,k,0),
-                                                        qv_arr(i,j,k,0));
+                        if (l_anelastic) {
+                            // base state is horizontally uniform & vertically smooth; clamp ghost
+                            // indices into the (3-ghost) base-state fab to stay in bounds.
+                            int bi = amrex::min(amrex::max(i, blo.x), bhi.x);
+                            int bj = amrex::min(amrex::max(j, blo.y), bhi.y);
+                            int bk = amrex::min(amrex::max(k, blo.z), bhi.z);
+                            t_arr(i,j,k,0) = theta_arr(i,j,k,0) * base_arr(bi,bj,bk,BaseState::pi0_comp);
+                            p_arr(i,j,k,0) = base_arr(bi,bj,bk,BaseState::p0_comp);
+                        } else {
+                            t_arr(i,j,k,0) = getTgivenRandRTh(rho_arr(i,j,k,0),
+                                                              rho_arr(i,j,k,0)*theta_arr(i,j,k,0),
+                                                              qv_arr(i,j,k,0));
+                            p_arr(i,j,k,0) = getPgivenRTh(rho_arr(i,j,k,0)*theta_arr(i,j,k,0),
+                                                          qv_arr(i,j,k,0));
+                        }
                     });
                 }
 

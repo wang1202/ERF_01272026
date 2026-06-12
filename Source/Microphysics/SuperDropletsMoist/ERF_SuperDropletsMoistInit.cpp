@@ -19,6 +19,7 @@ void SuperDropletsMoist::Define (SolverChoice& a_sc)
 {
     BL_PROFILE("SuperDropletsMoist::Define()");
     m_Cp = a_sc.c_p;
+    m_anelastic = (a_sc.anelastic[0] == 1);
 }
 
 /*! \brief Read model configuration parameters from input file

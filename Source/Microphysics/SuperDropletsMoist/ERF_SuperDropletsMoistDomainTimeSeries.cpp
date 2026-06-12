@@ -30,12 +30,16 @@ void SuperDropletsMoist::WriteDomainTimeSeries(const Real& a_time,
 {
     BL_PROFILE("SuperDropletsMoist::WriteDomainTimeSeries()");
 
+    // Domain-averaged diagnostic: m_mic_fab_vars is indexed [lev][var] after the
+    // SDM refactor, and m_geom is the level-0 (full domain) geometry.
+    const int lev = 0;
+
     // Get domain volume
     const Geometry& geom = m_geom;
     const auto dx = geom.CellSizeArray();
     const Real cell_volume = dx[0] * dx[1] * dx[2];
-    const BoxArray& ba = m_mic_fab_vars[MicVar_SD::temperature]->boxArray();
-    const DistributionMapping& dm = m_mic_fab_vars[MicVar_SD::temperature]->DistributionMap();
+    const BoxArray& ba = m_mic_fab_vars[lev][MicVar_SD::temperature]->boxArray();
+    const DistributionMapping& dm = m_mic_fab_vars[lev][MicVar_SD::temperature]->DistributionMap();
 
     // Count total cells
     Long total_cells = ba.numPts();
@@ -43,22 +47,27 @@ void SuperDropletsMoist::WriteDomainTimeSeries(const Real& a_time,
     // Compute domain-averaged Eulerian quantities
     IntVect nghost(0, 0, 0);
 
-    auto const& temp_arrs = m_mic_fab_vars[MicVar_SD::temperature]->const_arrays();
-    auto const& rh_arrs = m_mic_fab_vars[MicVar_SD::rh]->const_arrays();
+    auto const& temp_arrs = m_mic_fab_vars[lev][MicVar_SD::temperature]->const_arrays();
+    auto const& rh_arrs = m_mic_fab_vars[lev][MicVar_SD::rh]->const_arrays();
 
     Real temp_sum = ParReduce(TypeList<ReduceOpSum>{},
                               TypeList<Real>{},
-                              *m_mic_fab_vars[MicVar_SD::temperature], nghost,
+                              *m_mic_fab_vars[lev][MicVar_SD::temperature], nghost,
                               [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k) noexcept -> GpuTuple<Real> {
                                   return { temp_arrs[box_no](i,j,k) };
                               });
 
     Real rh_sum = ParReduce(TypeList<ReduceOpSum>{},
                             TypeList<Real>{},
-                            *m_mic_fab_vars[MicVar_SD::rh], nghost,
+                            *m_mic_fab_vars[lev][MicVar_SD::rh], nghost,
                             [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k) noexcept -> GpuTuple<Real> {
                                 return { rh_arrs[box_no](i,j,k) };
                             });
+
+    // ParReduce only sums over each rank's local boxes; sum across ranks before
+    // dividing by the global cell count (total_cells = ba.numPts()).
+    ParallelDescriptor::ReduceRealSum(temp_sum);
+    ParallelDescriptor::ReduceRealSum(rh_sum);
 
     Real temp_mean = temp_sum / total_cells;
     Real rh_mean = rh_sum / total_cells;

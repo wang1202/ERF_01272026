@@ -162,10 +162,29 @@ void SuperDropletsMoist::Copy_State_to_Micro (const MultiFab& a_cons_vars)
         const Array4<Real const>& S_arr  = a_cons_vars.const_array(mfi);
         const Array4<Real const>& qv_arr = m_mic_fab_vars[lev][MicVar_SD::q_v]->const_array(mfi);
 
+        // ANELASTIC: form the saturation temperature/pressure from the hydrostatic base state
+        // (T = theta*pi0(z), p = p0(z)) rather than the theta-coupled compressible EOS, which
+        // inflates T in warm/moist cells and depresses qsat-based RH in the updraft streaks.
+        const bool l_anelastic = (m_anelastic && lev < static_cast<int>(m_base_state.size())
+                                  && m_base_state[lev]);
+        const Array4<Real const> base_arr = l_anelastic ? m_base_state[lev]->const_array(mfi)
+                                                        : Array4<Real const>{};
+        const Dim3 blo = l_anelastic ? amrex::lbound(base_arr) : Dim3{0,0,0};
+        const Dim3 bhi = l_anelastic ? amrex::ubound(base_arr) : Dim3{0,0,0};
+
         ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
         {
-            t_arr(i,j,k,0) = getTgivenRandRTh(S_arr(i,j,k,Rho_comp),S_arr(i,j,k,RhoTheta_comp),qv_arr(i,j,k,0));
-            p_arr(i,j,k,0) = getPgivenRTh(S_arr(i,j,k,RhoTheta_comp),qv_arr(i,j,k,0));
+            Real theta = S_arr(i,j,k,RhoTheta_comp) / S_arr(i,j,k,Rho_comp);
+            if (l_anelastic) {
+                int bi = amrex::min(amrex::max(i, blo.x), bhi.x);
+                int bj = amrex::min(amrex::max(j, blo.y), bhi.y);
+                int bk = amrex::min(amrex::max(k, blo.z), bhi.z);
+                t_arr(i,j,k,0) = theta * base_arr(bi,bj,bk,BaseState::pi0_comp);
+                p_arr(i,j,k,0) = base_arr(bi,bj,bk,BaseState::p0_comp);
+            } else {
+                t_arr(i,j,k,0) = getTgivenRandRTh(S_arr(i,j,k,Rho_comp),S_arr(i,j,k,RhoTheta_comp),qv_arr(i,j,k,0));
+                p_arr(i,j,k,0) = getPgivenRTh(S_arr(i,j,k,RhoTheta_comp),qv_arr(i,j,k,0));
+            }
         });
     }
 

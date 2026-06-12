@@ -240,7 +240,7 @@ DiffusionSrcForState_N (const Box& bx, const Box& domain,
                 }
             } else  if (qty_index == RhoQ1_comp) {
                 if (!SurfLayer_on_zlo && !wall_flux_on_zlo && !wall_flux_on_zhi) {
-                    qfx1_z(i,j,k) = zflux(i,j,k);
+                    qfx1_z(i,j,k) = zflux(i,j,k) * explicit_fac; // match hfx_z; RhoQ1 is semi-implicit (see _T/_S)
                 }
             } else  if (qty_index == RhoQ2_comp) {
                 qfx2_z(i,j,k) = zflux(i,j,k);
@@ -396,7 +396,7 @@ DiffusionSrcForState_N (const Box& bx, const Box& domain,
                 }
             } else  if (qty_index == RhoQ1_comp) {
                 if (!SurfLayer_on_zlo && !wall_flux_on_zlo && !wall_flux_on_zhi) {
-                    qfx1_z(i,j,k) = zflux(i,j,k);
+                    qfx1_z(i,j,k) = zflux(i,j,k) * explicit_fac; // match hfx_z; RhoQ1 is semi-implicit (see _T/_S)
                 }
             } else  if (qty_index == RhoQ2_comp) {
                 qfx2_z(i,j,k) = zflux(i,j,k);
@@ -549,7 +549,7 @@ DiffusionSrcForState_N (const Box& bx, const Box& domain,
                 }
             } else  if (qty_index == RhoQ1_comp) {
                 if (!SurfLayer_on_zlo && !wall_flux_on_zlo && !wall_flux_on_zhi) {
-                    qfx1_z(i,j,k) = zflux(i,j,k);
+                    qfx1_z(i,j,k) = zflux(i,j,k) * explicit_fac; // match hfx_z; RhoQ1 is semi-implicit (see _T/_S)
                 }
             } else  if (qty_index == RhoQ2_comp) {
                 qfx2_z(i,j,k) = zflux(i,j,k);
@@ -699,7 +699,7 @@ DiffusionSrcForState_N (const Box& bx, const Box& domain,
                 }
             } else  if (qty_index == RhoQ1_comp) {
                 if (!SurfLayer_on_zlo && !wall_flux_on_zlo && !wall_flux_on_zhi) {
-                    qfx1_z(i,j,k) = zflux(i,j,k);
+                    qfx1_z(i,j,k) = zflux(i,j,k) * explicit_fac; // match hfx_z; RhoQ1 is semi-implicit (see _T/_S)
                 }
             } else  if (qty_index == RhoQ2_comp) {
                 qfx2_z(i,j,k) = zflux(i,j,k);
@@ -707,8 +707,14 @@ DiffusionSrcForState_N (const Box& bx, const Box& domain,
         });
     }
 
-    // This allows us to do semi-implicit discretization of the vertical diffusive terms
-    if (qty_index == RhoTheta_comp) {
+    // This allows us to do semi-implicit discretization of the vertical diffusive terms.
+    // RhoTheta (implicit_thermal_diffusion) and RhoQ1 (implicit_moisture_diffusion) each have a
+    // matching implicit vertical solve (ImplicitPre/ImplicitPost), so their explicit vertical
+    // flux must be scaled by explicit_fac to avoid double-counting. explicit_fac == 1 (i.e. the
+    // caller passed implicit_fac == 0) when that component is not solved implicitly, so this is a
+    // no-op then. Other scalars (RhoKE, RhoScalar, RhoQ2) have no implicit solve and must NOT be
+    // scaled here, or their vertical diffusion would be lost.
+    if (qty_index == RhoTheta_comp || qty_index == RhoQ1_comp) {
         ParallelFor(zbx, [=] AMREX_GPU_DEVICE (int i, int j, int k) noexcept
         {
             zflux(i,j,k) *= explicit_fac;

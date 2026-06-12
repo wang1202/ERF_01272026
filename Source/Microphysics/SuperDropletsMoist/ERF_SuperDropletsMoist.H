@@ -167,6 +167,15 @@ class SuperDropletsMoist : public NullMoistLagrangian {
         /*! \brief Set the current AMR level being processed */
         void SetCurrentLevel (const int& a_lev) override { m_current_lev = a_lev; }
 
+        /*! \brief Store a pointer to the (time-independent) base state for a level.
+         *  Refreshed each step (safe across regrid) so anelastic temperature/pressure
+         *  for saturation come from the hydrostatic base (theta*pi0, p0) rather than
+         *  the theta-coupled compressible EOS. */
+        void Set_Base_State (const int lev, const amrex::MultiFab& base_state) override {
+            if (lev >= static_cast<int>(m_base_state.size())) { m_base_state.resize(lev+1, nullptr); }
+            m_base_state[lev] = &base_state;
+        }
+
         /*! \brief Get the diagnostics interval */
         int getDiagnosticsInterval () const override { return m_diagnostics_iter; }
 
@@ -439,6 +448,10 @@ class SuperDropletsMoist : public NullMoistLagrangian {
         std::string m_name;
         /*! Geometry object */
         amrex::Geometry m_geom;
+        /*! True if the dynamics are anelastic (use hydrostatic base state for saturation T,p) */
+        bool m_anelastic = false;
+        /*! Per-level pointers to the (ERF-owned, time-independent) base state */
+        amrex::Vector<const amrex::MultiFab*> m_base_state;
         /*! number of microphysics variables */
         int m_qmoist_size;
         /*! number of water-related state variables for this moisture model */

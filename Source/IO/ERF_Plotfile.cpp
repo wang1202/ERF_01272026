@@ -1231,6 +1231,10 @@ ERF::Write3DPlotFile (int which, PlotFileType plotfile_type, Vector<std::string>
 
             if (containerHasElement(plot_var_names, "qsat"))
             {
+                // For anelastic, the saturation temperature is the hydrostatic base T = theta*pi0,
+                // not the theta-coupled EOS (which inflates T in warm/moist cells).
+                const bool l_anel = (solverChoice.anelastic[lev] == 1);
+                MultiFab pi_hse(base_state[lev], amrex::make_alias, BaseState::pi0_comp, 1);
 #ifdef _OPENMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -1238,12 +1242,14 @@ ERF::Write3DPlotFile (int which, PlotFileType plotfile_type, Vector<std::string>
                 {
                     const Box& bx = mfi.tilebox();
                     const Array4<Real>& derdat  = mf[lev].array(mfi);
-                    const Array4<Real const>& p_arr = pressure.array(mfi);
+                    const Array4<Real const>& p_arr  = pressure.array(mfi);
+                    const Array4<Real const>& pi_arr = pi_hse.const_array(mfi);
                     const Array4<Real const>& S_arr = vars_new[lev][Vars::cons].const_array(mfi);
                     ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
                     {
                         Real qv = S_arr(i,j,k,RhoQ1_comp) / S_arr(i,j,k,Rho_comp);
-                        Real T  = getTgivenRandRTh(S_arr(i,j,k,Rho_comp), S_arr(i,j,k,RhoTheta_comp), qv);
+                        Real T  = l_anel ? (S_arr(i,j,k,RhoTheta_comp)/S_arr(i,j,k,Rho_comp)) * pi_arr(i,j,k)
+                                         : getTgivenRandRTh(S_arr(i,j,k,Rho_comp), S_arr(i,j,k,RhoTheta_comp), qv);
                         Real p  = p_arr(i,j,k) * Real(0.01);
                         erf_qsatw(T, p, derdat(i,j,k,mf_comp));
                     });

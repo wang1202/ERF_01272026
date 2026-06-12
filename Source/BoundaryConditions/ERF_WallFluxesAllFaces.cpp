@@ -390,14 +390,14 @@ void impose_WallFluxes_all_faces(
                     // Combined turbulent + molecular: Flux = s * ρ * (Δφ) * (C*Ut + α/Δx)
                     if (do_hfx1) {
                         Real turb_coeff = face_params.Ch * Ut;
-                        Real molec_coeff = alpha_T / dx;
+                        Real molec_coeff = alpha_T / (Real(0.5) * dx); // wall->first cell-center distance is dx/2
                         Real H = s * rho * (theta_wall - theta) * (turb_coeff + molec_coeff);
                         hfx1_arr(i, j, k) = H;
                     }
                     if (do_qfx1) {
                         Real q_wall = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
                         Real turb_coeff = face_params.Cq * Ut;
-                        Real molec_coeff = alpha_C / dx;
+                        Real molec_coeff = alpha_C / (Real(0.5) * dx); // wall->first cell-center distance is dx/2
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx1_arr(i, j, k) = Q;
                     }
@@ -497,14 +497,14 @@ void impose_WallFluxes_all_faces(
                     // Combined turbulent + molecular: Flux = s * ρ * (Δφ) * (C*Ut + α/Δx)
                     if (do_hfx1) {
                         Real turb_coeff = face_params.Ch * Ut;
-                        Real molec_coeff = alpha_T / dx;
+                        Real molec_coeff = alpha_T / (Real(0.5) * dx); // wall->first cell-center distance is dx/2
                         Real H = s * rho * (theta_wall - theta) * (turb_coeff + molec_coeff);
                         hfx1_arr(i, j, k) = H;
                     }
                     if (do_qfx1) {
                         Real q_wall = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
                         Real turb_coeff = face_params.Cq * Ut;
-                        Real molec_coeff = alpha_C / dx;
+                        Real molec_coeff = alpha_C / (Real(0.5) * dx); // wall->first cell-center distance is dx/2
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx1_arr(i, j, k) = Q;
                     }
@@ -610,14 +610,14 @@ void impose_WallFluxes_all_faces(
                     // Combined turbulent + molecular: Flux = s * ρ * (Δφ) * (C*Ut + α/Δy)
                     if (do_hfx2) {
                         Real turb_coeff = face_params.Ch * Ut;
-                        Real molec_coeff = alpha_T / dy;
+                        Real molec_coeff = alpha_T / (Real(0.5) * dy); // wall->first cell-center distance is dy/2
                         Real H = s * rho * (theta_wall - theta) * (turb_coeff + molec_coeff);
                         hfx2_arr(i, j, k) = H;
                     }
                     if (do_qfx2) {
                         Real q_wall = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
                         Real turb_coeff = face_params.Cq * Ut;
-                        Real molec_coeff = alpha_C / dy;
+                        Real molec_coeff = alpha_C / (Real(0.5) * dy); // wall->first cell-center distance is dy/2
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx2_arr(i, j, k) = Q;
                     }
@@ -718,14 +718,14 @@ void impose_WallFluxes_all_faces(
                     // Combined turbulent + molecular: Flux = s * ρ * (Δφ) * (C*Ut + α/Δy)
                     if (do_hfx2) {
                         Real turb_coeff = face_params.Ch * Ut;
-                        Real molec_coeff = alpha_T / dy;
+                        Real molec_coeff = alpha_T / (Real(0.5) * dy); // wall->first cell-center distance is dy/2
                         Real H = s * rho * (theta_wall - theta) * (turb_coeff + molec_coeff);
                         hfx2_arr(i, j, k) = H;
                     }
                     if (do_qfx2) {
                         Real q_wall = compute_qsat_wall(T_wall_eff, p_pa, wetness_eff);
                         Real turb_coeff = face_params.Cq * Ut;
-                        Real molec_coeff = alpha_C / dy;
+                        Real molec_coeff = alpha_C / (Real(0.5) * dy); // wall->first cell-center distance is dy/2
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx2_arr(i, j, k) = Q;
                     }
@@ -823,14 +823,14 @@ void impose_WallFluxes_all_faces(
                     // Combined turbulent + molecular: Flux = s * ρ * (Δφ) * (C*Ut + α/Δz)
                     if (do_hfx3) {
                         Real turb_coeff = face_params.Ch * Ut;
-                        Real molec_coeff = alpha_T / dz;
+                        Real molec_coeff = alpha_T / (Real(0.5) * dz); // wall->first cell-center distance is dz/2
                         Real H = s * rho * (theta_wall - theta) * (turb_coeff + molec_coeff);
                         hfx3_arr(i, j, k) = H;
                     }
                     if (do_qfx3) {
                         Real q_wall = compute_qsat_wall(face_params.T_wall, p_pa, face_params.wetness);
                         Real turb_coeff = face_params.Cq * Ut;
-                        Real molec_coeff = alpha_C / dz;
+                        Real molec_coeff = alpha_C / (Real(0.5) * dz); // wall->first cell-center distance is dz/2
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx3_arr(i, j, k) = Q;
                     }
@@ -923,14 +923,14 @@ void impose_WallFluxes_all_faces(
                     // Combined turbulent + molecular: Flux = s * ρ * (Δφ) * (C*Ut + α/Δz)
                     if (do_hfx3) {
                         Real turb_coeff = face_params.Ch * Ut;
-                        Real molec_coeff = alpha_T / dz;
+                        Real molec_coeff = alpha_T / (Real(0.5) * dz); // wall->first cell-center distance is dz/2
                         Real H = s * rho * (theta_wall - theta) * (turb_coeff + molec_coeff);
                         hfx3_arr(i, j, k) = H;
                     }
                     if (do_qfx3) {
                         Real q_wall = compute_qsat_wall(face_params.T_wall, p_pa, face_params.wetness);
                         Real turb_coeff = face_params.Cq * Ut;
-                        Real molec_coeff = alpha_C / dz;
+                        Real molec_coeff = alpha_C / (Real(0.5) * dz); // wall->first cell-center distance is dz/2
                         Real Q = s * rho * (q_wall - qv) * (turb_coeff + molec_coeff);
                         q1fx3_arr(i, j, k) = Q;
                     }

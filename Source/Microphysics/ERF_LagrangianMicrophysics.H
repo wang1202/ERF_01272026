@@ -103,6 +103,12 @@ public:
         m_moist_model->Update_Micro_Vars(cons_in);
     }
 
+    /*! \brief provide the (time-independent) base state to the moisture model */
+    void Set_Base_State (const int& lev, const amrex::MultiFab& base_state) override
+    {
+        m_moist_model->Set_Base_State(lev, base_state);
+    }
+
     /*! \brief update ERF state variables from microphysics variables */
     void Update_State_Vars_Lev (const int& lev, /*!< AMR level */
                                 amrex::MultiFab& cons_in, /*!< Conserved state variables */

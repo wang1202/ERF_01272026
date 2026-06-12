@@ -102,6 +102,12 @@ public:
     void
     SetCurrentLevel (const int&) {}
 
+    //! Provide the (time-independent) base state for a level so anelastic models
+    //! can form the thermodynamic temperature/pressure from the hydrostatic base.
+    virtual
+    void
+    Set_Base_State (const int /*lev*/, const amrex::MultiFab& /*base_state*/) {}
+
     virtual
     void
     InitLevel (const int, const amrex::MultiFab&) {}

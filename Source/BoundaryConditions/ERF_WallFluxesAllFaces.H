@@ -86,6 +86,9 @@ struct WallFluxParams {
  * @param domain_bcs_type  Boundary condition types for momentum detection
  * @param alpha_T       Thermal diffusivity [m^2/s] (0.0 = no molecular diffusion)
  * @param alpha_C       Moisture diffusivity [m^2/s] (0.0 = no molecular diffusion)
+ * @param base_state    Hydrostatic base state MultiFab (r0,p0,pi0,th0,qv0); used for
+ *                      thermodynamic p/Exner when anelastic
+ * @param l_anelastic   If true, use base-state p_hse/pi0 instead of theta-coupled EOS
  */
 void impose_WallFluxes_all_faces(
     int lev,
@@ -97,7 +100,9 @@ void impose_WallFluxes_all_faces(
     const WallFluxParams& params,
     const amrex::Vector<amrex::BCRec>& domain_bcs_type,
     amrex::Real alpha_T = 0.0,
-    amrex::Real alpha_C = 0.0);
+    amrex::Real alpha_C = 0.0,
+    const amrex::MultiFab* base_state = nullptr,
+    bool l_anelastic = false);
 
 /**
  * @brief Determine if momentum drag should be applied on a face

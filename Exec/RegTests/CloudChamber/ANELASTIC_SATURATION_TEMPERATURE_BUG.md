@@ -1,7 +1,13 @@
 # Anelastic saturation-temperature bug (SuperDroplets / CloudChamber)
 
-**Status:** root cause found and fixed (Eulerian/diagnostic + phase-change saturation). A few
-secondary sites remain (see "Remaining work"). All changes currently uncommitted.
+**Status:** root cause found and fixed. Two distinct bugs of the same class were fixed and
+verified:
+1. **Streak-vs-ambient RH sign** (spatial): SDM saturation used the θ-coupled EOS temperature —
+   fixed in `Copy_State_to_Micro`, phase-change, and the plotfile (see below).
+2. **Bulk mean T and RH** (domain average): the wall-flux `θ_wall`/`q_wall` used the θ-coupled EOS,
+   and `prob.rho_0` was inconsistent with the dry-EOS base state — both fixed (see
+   "Bulk mean temperature and RH" below). Verified: bulk T 285.5 K → 287.7 K (→288) and bulk RH
+   1.188 → 1.025 (DNS target ≈1.03).
 
 ---
 
@@ -134,24 +140,80 @@ ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i,int j,int k) noexcept {
 
 ---
 
+## Bulk mean temperature and RH (the second bug)
+
+### Symptom
+Separate from the streak *sign*, the **domain-averaged** state sat in the wrong place: bulk
+**T ≈ 285.5 K** (should be ~288 K) and bulk **RH ≈ 1.18** (should be ~1.03 — DNS has mean T = 288 K,
+mean qv ≈ 0.011 kg/kg → RH ≈ 1.03). The cold bias and the high RH are the *same* error: too-cold
+air has a lower `qsat`, so `RH = qv/qsat` is inflated.
+
+### Two compounding causes, both the anelastic-pressure mistake
+
+**(a) Wall-flux `θ_wall` cold bias.** The wall heat flux converts the user's wall temperature
+`T_wall` to a potential temperature with the **θ-coupled EOS**:
+```cpp
+Real p_pa  = getPgivenRTh(rhotheta, qv);     // ← inflated by the moisture factor
+Real exner = getExnergivenP(p_pa, R_d/Cp_d);
+Real theta_wall = T_wall / exner;
+```
+In anelastic, `ρ` is pinned to `ρ₀`, so `getPgivenRTh(ρθ, qv)` is inflated mainly by the moisture
+factor `(1 + 1.61 qv)^1.4 ≈ 1.025` at `qv ≈ 0.011`. That gives `exner ≈ 1.007`, so
+`θ_wall = T_wall/1.007` is **~2 K too low on every wall**. The walls drive the whole enclosed
+domain, so the bulk θ is pulled ~2 K cold → bulk T ≈ 286 instead of 288 → `qsat` too low → bulk RH
+too high. The same `getPgivenRTh` pressure fed `compute_qsat_wall`, so `q_wall` was off too.
+
+**(b) `prob.rho_0` inconsistent with the dry-EOS base state.** The base-state HSE init
+(`erf_init_const_dens_and_th_hse` in `Source/Prob/ERF_InitDensityHSE.H`) computes the base pressure
+with the **dry** EOS: `p_hse = getPgivenRTh(rho_0 · T_0)`. With the old `rho_0 = 1.189416` (a value
+chosen to be *moist*-consistent with `p=1e5, T=288, qv=qsat`) this gives `p_hse ≈ 97 645 Pa` and
+`π₀ ≈ 0.993`, **not** `1e5` / `1`. Then everywhere the corrected code uses `T = θ·π₀`, the
+temperature is depressed by 0.7 % (~2 K at 288 K) and `qsat(T, p_hse)` shifts — again inflating RH.
+The dry-consistent value is `rho_0 = p_0/(R_d·T_0) = 1e5/(287·288) = 1.20984`, which gives
+`p_hse = 1e5`, `π₀ = 1`, so `T = θ` exactly.
+
+### The fix
+**(a)** Plumb the base state into the wall-flux routine and use `p_hse`/`π₀` instead of the EOS
+(anelastic-gated; compressible path unchanged):
+- `Source/BoundaryConditions/ERF_WallFluxesAllFaces.{H,cpp}` — `impose_WallFluxes_all_faces` gains
+  `const MultiFab* base_state` + `bool l_anelastic`. All six face kernels now read
+  `p_pa = base_arr(..,BaseState::p0_comp)` and `exner = base_arr(..,BaseState::pi0_comp)` (indices
+  clamped into the 3-ghost base fab via `lbound`/`ubound`), so `θ_wall = T_wall/π₀` and
+  `q_wall = qsat(T_wall, p_hse)`.
+- `Source/TimeIntegration/ERF_SlowRhsPre.cpp`, `ERF_TI_slow_headers.H`, `ERF_TI_slow_rhs_pre.H` —
+  thread `base_state[level]` through `erf_slow_rhs_pre` to the call site.
+
+**(b)** Set `prob.rho_0 = 1.20984` in `Exec/RegTests/CloudChamber/inputs`.
+
+### Verification (PiChamber: 2×2×1 m, 64×64×32, 16 000 steps, equilibrated t ≥ 200 s)
+| | bulk T | bulk RH |
+|---|---|---|
+| before (`rho_0=1.189416`, EOS wall flux) | 285.50 K | 1.188 |
+| after  (`rho_0=1.20984`, base-state wall flux) | 287.67 K | 1.025 |
+| DNS target | 288 K | ~1.03 |
+
+(Read off the SDM `*_domain_timeseries.txt` columns 2/3. Note that file appends across reruns and
+is only truncated at step 0 — delete it between fresh, non-restart runs or the averages mix runs.)
+
+---
+
 ## Remaining work (same bug class, lower priority)
 
 - **Plotfile `temp` field** — routes through the generic `erf_dermoisttemp` derive (no base-state
   access), so it still shows the EOS temperature. Either make the derive anelastic-aware or compute
   `temp` inline like `qsat`. Secondary (you plot `rel_humidity`, which is fixed).
-- **`compute_qsat_wall`** (`Source/BoundaryConditions/ERF_WallFluxesAllFaces.cpp`) — the wall
-  saturation `q_wall = wetness·qsat(T_wall, p)` uses `getPgivenRTh`-derived `p`. Should use `p_hse`.
-  Small effect (~1–4%; pinmatch showed the wall flux is not the driver). Needs base state plumbed
-  into `SlowRhsPre` / the wall-flux routine.
+- ~~**`compute_qsat_wall`** / wall-flux `θ_wall`~~ — **DONE** (see "Bulk mean temperature and RH").
+  This turned out *not* to be small: it was the dominant driver of the bulk cold bias / high RH.
 - **`ERFPCEvolve.cpp:326`** (`tabs = getTgivenRandRTh(...)`) — this is the **generic tracer**
   container `ERFPC`, **not** `SuperDropletPC`. Irrelevant to SuperDroplets; only matters if you use
   temperature-based tracer particles.
 
 ## Notes / gotchas
-- The base pressure here is `p_hse ≈ 97,645 Pa`, not 1e5. That follows from `prob.rho_0 = 1.189416`
-  being inconsistent with `prob.p_0 = 1e5`, `T_0 = 288` (consistent would be `rho_0 ≈ 1.209`).
-  It raises absolute RH ~11% but does not affect the streak-vs-ambient sign. Consider reconciling
-  the inputs.
+- **Reconciled:** the inputs now set `prob.rho_0 = 1.20984` so the dry-EOS base state gives
+  `p_hse = 1e5`, `π₀ = 1` (`T = θ`). The old `rho_0 = 1.189416` gave `p_hse ≈ 97,645 Pa`, `π₀ ≈
+  0.993`, which is one of the two bulk-RH causes above. (`rho_0 = 1.189416` was moist-consistent
+  for `p=1e5,T=288,qv=qsat`, but the base-state HSE init uses the **dry** EOS, so the dry-consistent
+  `rho_0 = p_0/(R_d T_0)` is the right value.)
 - Quick check that the fix is active: the plotted `rel_humidity` (`= MicVar_SD::rh = qmoist[5]`)
   should change; the plotfile `temp` field will *not* (it's the separate EOS derive).
 - Robust verification metric: conditional mean of `rel_humidity` over the full k=0 plane split by

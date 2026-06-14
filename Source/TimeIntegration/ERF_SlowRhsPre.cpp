@@ -101,6 +101,7 @@ void erf_slow_rhs_pre (int level, int finest_level,
                        const Vector<BCRec>& domain_bcs_type_h,
                        const MultiFab& z_phys_nd,
                        const MultiFab& z_phys_cc,
+                       const MultiFab& base_state,
                        const MultiFab& ax, const MultiFab& ay, const MultiFab& az,
                        const MultiFab& detJ,
                        Gpu::DeviceVector<Real>& stretched_dz_d,
@@ -261,7 +262,8 @@ void erf_slow_rhs_pre (int level, int finest_level,
                                        Hfx1, Hfx2, Hfx3,
                                        Q1fx1, Q1fx2, Q1fx3,
                                        geom, wallflux_params, domain_bcs_type_h,
-                                       alpha_T_wall, alpha_C_wall);
+                                       alpha_T_wall, alpha_C_wall,
+                                       &base_state, l_anelastic);
         }
     } // l_use_diff
 

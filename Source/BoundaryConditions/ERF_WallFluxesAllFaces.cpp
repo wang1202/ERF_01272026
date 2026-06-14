@@ -210,9 +210,18 @@ void impose_WallFluxes_all_faces(
     const WallFluxParams& params,
     const amrex::Vector<amrex::BCRec>& domain_bcs_type,
     amrex::Real alpha_T,
-    amrex::Real alpha_C)
+    amrex::Real alpha_C,
+    const amrex::MultiFab* base_state,
+    bool l_anelastic)
 {
     if (!params.enable) return;
+
+    // In anelastic, the thermodynamic pressure/Exner used to convert the wall
+    // temperature T_wall to a potential temperature (and for qsat) must come from
+    // the hydrostatic base state p_hse/pi0, NOT the theta-coupled EOS getPgivenRTh,
+    // which over-inflates p (and hence depresses theta_wall) via the (1+1.61 qv)
+    // moisture factor and theta perturbations while rho is pinned to rho_0.
+    const bool l_anel = (l_anelastic && base_state != nullptr);
     
     const auto& cons_mf = *mfs[0];
     const auto& xvel_mf = *mfs[1];
@@ -267,7 +276,14 @@ void impose_WallFluxes_all_faces(
     const bool have_tau32 = (nTau > TauType::tau32) && (Tau_lev[TauType::tau32] != nullptr);
     
     for (MFIter mfi(cons_mf); mfi.isValid(); ++mfi) {
-        
+
+        // Base-state array (anelastic) and its clamping bounds (base state has fewer
+        // ghost cells than cons, so wall-cell indices must be clamped into range)
+        const Array4<const Real> base_arr = l_anel ? base_state->const_array(mfi)
+                                                   : Array4<const Real>{};
+        const Dim3 blo = l_anel ? amrex::lbound(base_arr) : Dim3{0,0,0};
+        const Dim3 bhi = l_anel ? amrex::ubound(base_arr) : Dim3{0,0,0};
+
         const auto& cons_arr = cons_mf.const_array(mfi);
         const auto& xvel_arr = xvel_mf.const_array(mfi);
         const auto& yvel_arr = yvel_mf.const_array(mfi);
@@ -344,9 +360,19 @@ void impose_WallFluxes_all_faces(
                         }
                     }
 
-                    // Shared thermodynamics: compute once for both heat and moisture
-                    Real p_pa  = getPgivenRTh(rhotheta, qv);
-                    Real exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    // Shared thermodynamics: compute once for both heat and moisture.
+                    // Anelastic uses the hydrostatic base state p_hse/pi0 (see note above).
+                    Real p_pa, exner;
+                    if (l_anel) {
+                        const int bi = amrex::min(amrex::max(ii, blo.x), bhi.x);
+                        const int bj = amrex::min(amrex::max(jj, blo.y), bhi.y);
+                        const int bk = amrex::min(amrex::max(kk, blo.z), bhi.z);
+                        p_pa  = base_arr(bi, bj, bk, BaseState::p0_comp);
+                        exner = base_arr(bi, bj, bk, BaseState::pi0_comp);
+                    } else {
+                        p_pa  = getPgivenRTh(rhotheta, qv);
+                        exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    }
                     Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
                     // Wall-normal velocity for PAFNN
@@ -451,9 +477,19 @@ void impose_WallFluxes_all_faces(
                         }
                     }
 
-                    // Shared thermodynamics: compute once for both heat and moisture
-                    Real p_pa  = getPgivenRTh(rhotheta, qv);
-                    Real exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    // Shared thermodynamics: compute once for both heat and moisture.
+                    // Anelastic uses the hydrostatic base state p_hse/pi0 (see note above).
+                    Real p_pa, exner;
+                    if (l_anel) {
+                        const int bi = amrex::min(amrex::max(ii, blo.x), bhi.x);
+                        const int bj = amrex::min(amrex::max(jj, blo.y), bhi.y);
+                        const int bk = amrex::min(amrex::max(kk, blo.z), bhi.z);
+                        p_pa  = base_arr(bi, bj, bk, BaseState::p0_comp);
+                        exner = base_arr(bi, bj, bk, BaseState::pi0_comp);
+                    } else {
+                        p_pa  = getPgivenRTh(rhotheta, qv);
+                        exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    }
                     Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
                     // Wall-normal velocity for PAFNN
@@ -564,9 +600,19 @@ void impose_WallFluxes_all_faces(
                         }
                     }
 
-                    // Shared thermodynamics: compute once for both heat and moisture
-                    Real p_pa  = getPgivenRTh(rhotheta, qv);
-                    Real exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    // Shared thermodynamics: compute once for both heat and moisture.
+                    // Anelastic uses the hydrostatic base state p_hse/pi0 (see note above).
+                    Real p_pa, exner;
+                    if (l_anel) {
+                        const int bi = amrex::min(amrex::max(ii, blo.x), bhi.x);
+                        const int bj = amrex::min(amrex::max(jj, blo.y), bhi.y);
+                        const int bk = amrex::min(amrex::max(kk, blo.z), bhi.z);
+                        p_pa  = base_arr(bi, bj, bk, BaseState::p0_comp);
+                        exner = base_arr(bi, bj, bk, BaseState::pi0_comp);
+                    } else {
+                        p_pa  = getPgivenRTh(rhotheta, qv);
+                        exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    }
                     Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
                     // Wall-normal velocity for PAFNN
@@ -672,9 +718,19 @@ void impose_WallFluxes_all_faces(
                         }
                     }
 
-                    // Shared thermodynamics: compute once for both heat and moisture
-                    Real p_pa  = getPgivenRTh(rhotheta, qv);
-                    Real exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    // Shared thermodynamics: compute once for both heat and moisture.
+                    // Anelastic uses the hydrostatic base state p_hse/pi0 (see note above).
+                    Real p_pa, exner;
+                    if (l_anel) {
+                        const int bi = amrex::min(amrex::max(ii, blo.x), bhi.x);
+                        const int bj = amrex::min(amrex::max(jj, blo.y), bhi.y);
+                        const int bk = amrex::min(amrex::max(kk, blo.z), bhi.z);
+                        p_pa  = base_arr(bi, bj, bk, BaseState::p0_comp);
+                        exner = base_arr(bi, bj, bk, BaseState::pi0_comp);
+                    } else {
+                        p_pa  = getPgivenRTh(rhotheta, qv);
+                        exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    }
                     Real theta_wall = T_wall_eff / exner;  // Convert T to θ
 
                     // Wall-normal velocity for PAFNN
@@ -771,9 +827,19 @@ void impose_WallFluxes_all_faces(
                                              yvel_arr(ii,   jj,   kk_p) + yvel_arr(ii,   jj_p, kk_p) );
                     Real Ut = std::sqrt(ut*ut + vt*vt);
                     
-                    // Shared thermodynamics: compute once for both heat and moisture
-                    Real p_pa  = getPgivenRTh(rhotheta, qv);
-                    Real exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    // Shared thermodynamics: compute once for both heat and moisture.
+                    // Anelastic uses the hydrostatic base state p_hse/pi0 (see note above).
+                    Real p_pa, exner;
+                    if (l_anel) {
+                        const int bi = amrex::min(amrex::max(ii, blo.x), bhi.x);
+                        const int bj = amrex::min(amrex::max(jj, blo.y), bhi.y);
+                        const int bk = amrex::min(amrex::max(kk, blo.z), bhi.z);
+                        p_pa  = base_arr(bi, bj, bk, BaseState::p0_comp);
+                        exner = base_arr(bi, bj, bk, BaseState::pi0_comp);
+                    } else {
+                        p_pa  = getPgivenRTh(rhotheta, qv);
+                        exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    }
                     Real theta_wall = face_params.T_wall / exner;  // Convert T to θ
 
                     // Wall-normal velocity for PAFNN
@@ -871,9 +937,19 @@ void impose_WallFluxes_all_faces(
                                              yvel_arr(ii,   jj,   kk_m) + yvel_arr(ii,   jj_p, kk_m) );
                     Real Ut = std::sqrt(ut*ut + vt*vt);
                     
-                    // Shared thermodynamics: compute once for both heat and moisture
-                    Real p_pa  = getPgivenRTh(rhotheta, qv);
-                    Real exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    // Shared thermodynamics: compute once for both heat and moisture.
+                    // Anelastic uses the hydrostatic base state p_hse/pi0 (see note above).
+                    Real p_pa, exner;
+                    if (l_anel) {
+                        const int bi = amrex::min(amrex::max(ii, blo.x), bhi.x);
+                        const int bj = amrex::min(amrex::max(jj, blo.y), bhi.y);
+                        const int bk = amrex::min(amrex::max(kk, blo.z), bhi.z);
+                        p_pa  = base_arr(bi, bj, bk, BaseState::p0_comp);
+                        exner = base_arr(bi, bj, bk, BaseState::pi0_comp);
+                    } else {
+                        p_pa  = getPgivenRTh(rhotheta, qv);
+                        exner = getExnergivenP(p_pa, R_d / Cp_d);
+                    }
                     Real theta_wall = face_params.T_wall / exner;  // Convert T to θ
 
                     // Wall-normal velocity for PAFNN

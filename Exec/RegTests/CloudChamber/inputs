@@ -13,9 +13,9 @@ fabarray.mfiter_tile_size = 1024 1024 1024
 
 # PROBLEM SIZE & GEOMETRY
 geometry.prob_lo =  0.  0.  0.
-geometry.prob_hi =  1.  1.  1.
+geometry.prob_hi =  2.  2.  1.
 # amr.n_cell       = 128 128 64
-amr.n_cell       = 32 32 32
+amr.n_cell       = 64 64 32
 
 geometry.is_periodic = 0 0 0
 
@@ -84,7 +84,7 @@ erf.Sc_t      = 0.377
 # erf.input_sounding_file = "input_sounding_file"
 
 # PROBLEM PARAMETERS (Thermodynamic targets)
-prob.rho_0 = 1.189416  # kg/m3 (moist-consistent: gives T=288K, p=100000Pa with qv=qsat)
+prob.rho_0 = 1.20984   # kg/m3 = p_0/(R_d*T_0) = 1e5/(287*288); makes the dry-EOS base-state HSE self-consistent: p_hse=1e5, pi0=1, so T=theta exactly
 prob.T_0  = 288.0      # K (used as theta_0 in uniform init)
 prob.p_0  = 100000.0   # Pa (for qsat calculation in UserDefined init)
 prob.rh_0 = 1.0       # unitless (0–1). Use 1.0 for exactly saturated, qc=0.

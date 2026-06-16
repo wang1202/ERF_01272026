@@ -146,29 +146,29 @@ erf.wallflux_diagnostics = true
 erf.wallflux_output_interval = 100
 
 # === dx=3.125 cm | all cases | with molecular ===
-# Drag coefficient (momentum): sidewalls = 0.016583, top/bot = 0.013033
-wallflux.Cm.xlo = 0.018214
-wallflux.Cm.xhi = 0.018214
-wallflux.Cm.ylo = 0.018214
-wallflux.Cm.yhi = 0.018214
-wallflux.Cm.zlo = 0.015065
-wallflux.Cm.zhi = 0.015065
+# Drag coefficients
+wallflux.Cm.xlo = 0.023474
+wallflux.Cm.xhi = 0.023474
+wallflux.Cm.ylo = 0.023474
+wallflux.Cm.yhi = 0.023474
+wallflux.Cm.zlo = 0.015511
+wallflux.Cm.zhi = 0.015511
 
-# Heat transfer coefficient: sidewalls = top/bot = 0.021393
-wallflux.Ch.xlo = 0.022831
-wallflux.Ch.xhi = 0.022831
-wallflux.Ch.ylo = 0.022831
-wallflux.Ch.yhi = 0.022831
-wallflux.Ch.zlo = 0.023537
-wallflux.Ch.zhi = 0.023537
+# Heat exchange coefficients
+wallflux.Ch.xlo = 0.015261
+wallflux.Ch.xhi = 0.015261
+wallflux.Ch.ylo = 0.015261
+wallflux.Ch.yhi = 0.015261
+wallflux.Ch.zlo = 0.019916
+wallflux.Ch.zhi = 0.019916
 
-# Moisture transfer coefficient: sidewalls = top/bot = 0.021410
-wallflux.Cq.xlo = 0.023537
-wallflux.Cq.xhi = 0.023537
-wallflux.Cq.ylo = 0.023537
-wallflux.Cq.yhi = 0.023537
-wallflux.Cq.zlo = 0.024265
-wallflux.Cq.zhi = 0.024265
+# Moisture exchange coefficients
+wallflux.Cq.xlo = 0.016639
+wallflux.Cq.xhi = 0.016639
+wallflux.Cq.ylo = 0.016639
+wallflux.Cq.yhi = 0.016639
+wallflux.Cq.zlo = 0.021606
+wallflux.Cq.zhi = 0.021606
 
 # Wall temperatures (in Kelvin) - different for each face
 wallflux.T_wall.xlo = 288.0  # cooler left wall

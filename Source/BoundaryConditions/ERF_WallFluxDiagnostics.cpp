@@ -82,13 +82,31 @@ void WallFluxDiagnostics::output(int level, Real time, int timestep,
 
     constexpr Real cp = 1004.0; // J/(kg·K)
 
+    // Side-wall momentum drag is stored in the transpose stress slots (tau21/tau31/
+    // tau32) for terrain, but in the co-located symmetric slots (tau12/tau13/tau23)
+    // for flat/no-terrain runs, where the transpose slots are null. Mirror that
+    // fallback here so the reported x/y-face stresses are nonzero off terrain.
+    // See ERF_WallFluxesAllFaces.cpp.
+    auto tau_slot = [&](int transpose, int symmetric) -> const MultiFab* {
+        if (Tau_lev.size() > transpose && Tau_lev[transpose] != nullptr) {
+            return Tau_lev[transpose].get();
+        }
+        if (Tau_lev.size() > symmetric && Tau_lev[symmetric] != nullptr) {
+            return Tau_lev[symmetric].get();
+        }
+        return nullptr;
+    };
+    const MultiFab* tau_yx_mf = tau_slot(TauType::tau21, TauType::tau12); // x-face
+    const MultiFab* tau_zx_mf = tau_slot(TauType::tau31, TauType::tau13); // x-face
+    const MultiFab* tau_xy_mf = tau_slot(TauType::tau12, TauType::tau12); // y-face
+    const MultiFab* tau_zy_mf = tau_slot(TauType::tau32, TauType::tau23); // y-face
+
     // ============================================================================
     // X-faces (0=xlo, 1=xhi)
     // ============================================================================
     if (!geom.isPeriodic(0)) {
         // Shear stress: sqrt(tau_yx^2 + tau_zx^2)
-        if (Tau_lev.size() > TauType::tau21 && Tau_lev[TauType::tau21] != nullptr &&
-            Tau_lev.size() > TauType::tau31 && Tau_lev[TauType::tau31] != nullptr) {
+        if (tau_yx_mf != nullptr && tau_zx_mf != nullptr) {
 
             // xlo tau
             {
@@ -96,10 +114,10 @@ void WallFluxDiagnostics::output(int level, Real time, int timestep,
                 ReduceData<Real> reduce_data(reduce_op);
                 using ReduceTuple = typename decltype(reduce_data)::Type;
 
-                for (MFIter mfi(*Tau_lev[TauType::tau21]); mfi.isValid(); ++mfi) {
+                for (MFIter mfi(*tau_yx_mf); mfi.isValid(); ++mfi) {
                     const Box& bx = mfi.validbox();
-                    auto const& tau21_arr = Tau_lev[TauType::tau21]->const_array(mfi);
-                    auto const& tau31_arr = Tau_lev[TauType::tau31]->const_array(mfi);
+                    auto const& tau21_arr = tau_yx_mf->const_array(mfi);
+                    auto const& tau31_arr = tau_zx_mf->const_array(mfi);
 
                     reduce_op.eval(bx, reduce_data,
                         [=] AMREX_GPU_DEVICE (int i, int j, int k) -> ReduceTuple
@@ -123,10 +141,10 @@ void WallFluxDiagnostics::output(int level, Real time, int timestep,
                 ReduceData<Real> reduce_data(reduce_op);
                 using ReduceTuple = typename decltype(reduce_data)::Type;
 
-                for (MFIter mfi(*Tau_lev[TauType::tau21]); mfi.isValid(); ++mfi) {
+                for (MFIter mfi(*tau_yx_mf); mfi.isValid(); ++mfi) {
                     const Box& bx = mfi.validbox();
-                    auto const& tau21_arr = Tau_lev[TauType::tau21]->const_array(mfi);
-                    auto const& tau31_arr = Tau_lev[TauType::tau31]->const_array(mfi);
+                    auto const& tau21_arr = tau_yx_mf->const_array(mfi);
+                    auto const& tau31_arr = tau_zx_mf->const_array(mfi);
 
                     reduce_op.eval(bx, reduce_data,
                         [=] AMREX_GPU_DEVICE (int i, int j, int k) -> ReduceTuple
@@ -218,8 +236,7 @@ void WallFluxDiagnostics::output(int level, Real time, int timestep,
     // ============================================================================
     if (!geom.isPeriodic(1)) {
         // Shear stress: sqrt(tau_xy^2 + tau_zy^2)
-        if (Tau_lev.size() > TauType::tau12 && Tau_lev[TauType::tau12] != nullptr &&
-            Tau_lev.size() > TauType::tau32 && Tau_lev[TauType::tau32] != nullptr) {
+        if (tau_xy_mf != nullptr && tau_zy_mf != nullptr) {
 
             // ylo tau
             {
@@ -227,10 +244,10 @@ void WallFluxDiagnostics::output(int level, Real time, int timestep,
                 ReduceData<Real> reduce_data(reduce_op);
                 using ReduceTuple = typename decltype(reduce_data)::Type;
 
-                for (MFIter mfi(*Tau_lev[TauType::tau12]); mfi.isValid(); ++mfi) {
+                for (MFIter mfi(*tau_xy_mf); mfi.isValid(); ++mfi) {
                     const Box& bx = mfi.validbox();
-                    auto const& tau12_arr = Tau_lev[TauType::tau12]->const_array(mfi);
-                    auto const& tau32_arr = Tau_lev[TauType::tau32]->const_array(mfi);
+                    auto const& tau12_arr = tau_xy_mf->const_array(mfi);
+                    auto const& tau32_arr = tau_zy_mf->const_array(mfi);
 
                     reduce_op.eval(bx, reduce_data,
                         [=] AMREX_GPU_DEVICE (int i, int j, int k) -> ReduceTuple
@@ -254,10 +271,10 @@ void WallFluxDiagnostics::output(int level, Real time, int timestep,
                 ReduceData<Real> reduce_data(reduce_op);
                 using ReduceTuple = typename decltype(reduce_data)::Type;
 
-                for (MFIter mfi(*Tau_lev[TauType::tau12]); mfi.isValid(); ++mfi) {
+                for (MFIter mfi(*tau_xy_mf); mfi.isValid(); ++mfi) {
                     const Box& bx = mfi.validbox();
-                    auto const& tau12_arr = Tau_lev[TauType::tau12]->const_array(mfi);
-                    auto const& tau32_arr = Tau_lev[TauType::tau32]->const_array(mfi);
+                    auto const& tau12_arr = tau_xy_mf->const_array(mfi);
+                    auto const& tau32_arr = tau_zy_mf->const_array(mfi);
 
                     reduce_op.eval(bx, reduce_data,
                         [=] AMREX_GPU_DEVICE (int i, int j, int k) -> ReduceTuple

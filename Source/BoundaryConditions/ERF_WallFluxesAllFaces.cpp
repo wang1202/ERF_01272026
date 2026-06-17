@@ -270,10 +270,21 @@ void impose_WallFluxes_all_faces(
     const auto nTau = Tau_lev.size();
     const bool have_tau12 = (nTau > TauType::tau12) && (Tau_lev[TauType::tau12] != nullptr);
     const bool have_tau13 = (nTau > TauType::tau13) && (Tau_lev[TauType::tau13] != nullptr);
-    const bool have_tau21 = (nTau > TauType::tau21) && (Tau_lev[TauType::tau21] != nullptr);
     const bool have_tau23 = (nTau > TauType::tau23) && (Tau_lev[TauType::tau23] != nullptr);
-    const bool have_tau31 = (nTau > TauType::tau31) && (Tau_lev[TauType::tau31] != nullptr);
-    const bool have_tau32 = (nTau > TauType::tau32) && (Tau_lev[TauType::tau32] != nullptr);
+
+    // The transpose stress components (tau21/tau31/tau32) are only allocated for
+    // terrain (see ERF_MakeNewArrays.cpp). On a flat domain they are null, so the
+    // side-wall momentum drag must instead be deposited into the co-located
+    // *symmetric* components that the non-terrain momentum diffusion actually
+    // consumes (see ERF_DiffusionSrcForMom.cpp): tau_yx->tau12, tau_zx->tau13,
+    // tau_zy->tau23. The grids are identical (tau21~tau12 on ba12, tau31~tau13 on
+    // ba13, tau32~tau23 on ba23), so writing into the symmetric slot is valid.
+    const bool have_tau21_slot = (nTau > TauType::tau21) && (Tau_lev[TauType::tau21] != nullptr);
+    const bool have_tau31_slot = (nTau > TauType::tau31) && (Tau_lev[TauType::tau31] != nullptr);
+    const bool have_tau32_slot = (nTau > TauType::tau32) && (Tau_lev[TauType::tau32] != nullptr);
+    const bool have_tau21 = have_tau21_slot || have_tau12; // tau_yx target available?
+    const bool have_tau31 = have_tau31_slot || have_tau13; // tau_zx target available?
+    const bool have_tau32 = have_tau32_slot || have_tau23; // tau_zy target available?
     
     for (MFIter mfi(cons_mf); mfi.isValid(); ++mfi) {
 
@@ -305,10 +316,13 @@ void impose_WallFluxes_all_faces(
         
         if (have_tau12) tau12_arr = Tau_lev[TauType::tau12]->array(mfi);
         if (have_tau13) tau13_arr = Tau_lev[TauType::tau13]->array(mfi);
-        if (have_tau21) tau21_arr = Tau_lev[TauType::tau21]->array(mfi);
         if (have_tau23) tau23_arr = Tau_lev[TauType::tau23]->array(mfi);
-        if (have_tau31) tau31_arr = Tau_lev[TauType::tau31]->array(mfi);
-        if (have_tau32) tau32_arr = Tau_lev[TauType::tau32]->array(mfi);
+        // Transpose components fall back to their co-located symmetric slot when the
+        // transpose MultiFab is not allocated (flat/no-terrain runs), so side-wall
+        // drag reaches the symmetric stress the momentum diffusion reads.
+        tau21_arr = have_tau21_slot ? Tau_lev[TauType::tau21]->array(mfi) : tau12_arr;
+        tau31_arr = have_tau31_slot ? Tau_lev[TauType::tau31]->array(mfi) : tau13_arr;
+        tau32_arr = have_tau32_slot ? Tau_lev[TauType::tau32]->array(mfi) : tau23_arr;
         
         // X-faces (0=xlo, 1=xhi) - process only if domain is not periodic in x
         if (!geom.isPeriodic(0)) {

@@ -466,6 +466,12 @@ struct SolverChoice {
         pp.query("ncorr", ncorr);
         pp.query("poisson_abstol", poisson_abstol);
         pp.query("poisson_reltol", poisson_reltol);
+
+        // Ad-hoc multi-box scalar-conservation correction (anelastic): coefficient that scales
+        // the spurious-advective-mean removal applied to rho*theta and total water (RhoQ1).
+        // 1.0 = full correction (default), 0.0 = off (test the leak), in-between = partial.
+        // See Docs/multibox_conservation_stopgap.md.
+        pp.query("conservation_fix_coeff", conservation_fix_coeff);
 #ifdef AMREX_USE_FLOAT
         poisson_abstol = amrex::max(poisson_abstol,amrex::Real(1e-6));
         poisson_reltol = amrex::max(poisson_reltol,amrex::Real(1e-6));
@@ -1300,6 +1306,9 @@ struct SolverChoice {
     amrex::Real poisson_abstol      = amrex::Real(1e-8);
     amrex::Real poisson_reltol      = amrex::Real(1e-8);
 #endif
+
+    // Ad-hoc multi-box scalar-conservation correction coefficient (1=on, 0=off)
+    amrex::Real conservation_fix_coeff = amrex::Real(1.0);
 
     bool        test_mapfactor         = false;
 

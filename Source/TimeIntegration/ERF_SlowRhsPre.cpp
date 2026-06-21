@@ -288,6 +288,21 @@ void erf_slow_rhs_pre (int level, int finest_level,
         }
     }
 
+    // Conservation fix: in the anelastic (fixed_rho) path the multi-box projection leaves a
+    // small divergence residual in the advecting momentum, which makes the discrete
+    // (rho*theta) advection non-conservative (it does not integrate to zero over a closed
+    // domain). Capture the advective RhoTheta tendency so we can remove its spurious
+    // domain-mean below, restoring exact conservation of int(rho*theta) under advection.
+    // The correction is scaled by the input knob erf.conservation_fix_coeff (1=on, 0=off).
+    const Real cons_fix_coeff = solverChoice.conservation_fix_coeff;
+    const bool l_fix_cons = l_anelastic && (cons_fix_coeff != Real(0.0));
+    MultiFab rthp_adv_snap;
+    if (l_fix_cons) {
+        rthp_adv_snap.define(S_rhs[IntVars::cons].boxArray(),
+                             S_rhs[IntVars::cons].DistributionMap(), 1, 0);
+        rthp_adv_snap.setVal(0.0);
+    }
+
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
 #endif
@@ -618,6 +633,14 @@ void erf_slow_rhs_pre (int level, int finest_level,
                                 already_on_centroids);
         }
 
+        if (l_fix_cons) {
+            auto crhs = S_rhs[IntVars::cons].const_array(mfi);
+            auto snap = rthp_adv_snap.array(mfi);
+            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i,int j,int k) noexcept {
+                snap(i,j,k,0) = crhs(i,j,k,RhoTheta_comp);
+            });
+        }
+
         if (l_use_diff) {
             Array4<Real> diffflux_x = dflux_x->array(mfi);
             Array4<Real> diffflux_y = dflux_y->array(mfi);
@@ -927,4 +950,51 @@ void erf_slow_rhs_pre (int level, int finest_level,
         } // end profile
     } // mfi
     } // OMP
+
+    // Conservation fix (anelastic/fixed_rho): remove the spurious domain-mean of the
+    // advective RhoTheta tendency so that advection conserves int(rho*theta) exactly over
+    // the closed domain. The residual comes from the multi-box projection leaving a tiny
+    // divergence in the advecting momentum; it is identically zero for a single grid box.
+    if (l_fix_cons) {
+        // Determine whether the domain is closed: max |normal advecting momentum| over the
+        // six domain-boundary faces. Exactly zero at solid walls; O(rho*U) for inflow/outflow.
+        Real bnd_mom = 0.;
+        const Box& dom = geom.Domain();
+        const int ixlo=dom.smallEnd(0), ixhi=dom.bigEnd(0)+1;
+        const int jylo=dom.smallEnd(1), jyhi=dom.bigEnd(1)+1;
+        const int kzlo=dom.smallEnd(2), kzhi=dom.bigEnd(2)+1;
+        for (MFIter mfi(avg_xmom); mfi.isValid(); ++mfi) {
+            auto ax = avg_xmom.const_array(mfi); const Box xb = mfi.validbox();
+            amrex::LoopOnCpu(xb, [&] (int i,int j,int k){ if(i==ixlo||i==ixhi) bnd_mom=amrex::max(bnd_mom,std::abs(ax(i,j,k))); });
+        }
+        for (MFIter mfi(avg_ymom); mfi.isValid(); ++mfi) {
+            auto ay = avg_ymom.const_array(mfi); const Box yb = mfi.validbox();
+            amrex::LoopOnCpu(yb, [&] (int i,int j,int k){ if(j==jylo||j==jyhi) bnd_mom=amrex::max(bnd_mom,std::abs(ay(i,j,k))); });
+        }
+        for (MFIter mfi(avg_zmom); mfi.isValid(); ++mfi) {
+            auto az = avg_zmom.const_array(mfi); const Box zb = mfi.validbox();
+            amrex::LoopOnCpu(zb, [&] (int i,int j,int k){ if(k==kzlo||k==kzhi) bnd_mom=amrex::max(bnd_mom,std::abs(az(i,j,k))); });
+        }
+        amrex::ParallelDescriptor::ReduceRealMax(bnd_mom);
+
+        const Long ncells = domain.numPts();
+        const Real adv_mean = rthp_adv_snap.sum(0) / Real(ncells);
+        // The advective tendency enters cell_rhs scaled by the RK-average factor (anelastic
+        // 2nd stage halves the explicit RHS); remove the spurious mean with the same factor.
+        const Real fac = (l_anelastic && (nrk == 1)) ? myhalf : one;
+        const Real shift = cons_fix_coeff * fac * adv_mean;
+        // Only correct when the domain is closed (no net advective boundary flux).
+        if (bnd_mom < Real(1.e-12) && shift != Real(0.0)) {
+#ifdef _OPENMP
+#pragma omp parallel if (Gpu::notInLaunchRegion())
+#endif
+            for (MFIter mfi(S_rhs[IntVars::cons],TileNoZ()); mfi.isValid(); ++mfi) {
+                const Box& bx = mfi.tilebox();
+                auto crhs = S_rhs[IntVars::cons].array(mfi);
+                ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i,int j,int k) noexcept {
+                    crhs(i,j,k,RhoTheta_comp) -= shift;
+                });
+            }
+        }
+    }
 }

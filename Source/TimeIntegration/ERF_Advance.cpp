@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <ERF.H>
 #include <ERF_Utils.H>
 
@@ -233,11 +234,35 @@ ERF::Advance (int lev, Real time, Real dt_lev, int iteration, int /*ncycle*/)
     // **************************************************************************************
     // Update the dycore
     // **************************************************************************************
+    // [RHOTHETA-PROBE] gated conservation monitor: change in domain-integrated rho*theta
+    // across the dycore (inert unless ERF_RHOTHETA_PROBE is set).
+    Real rthp_vol = 0., rthp_before = 0., rhqv_before = 0.;
+    const bool rthp_on = (lev == 0) && (std::getenv("ERF_RHOTHETA_PROBE") != nullptr);
+    const bool rthp_qv = rthp_on && (S_old.nComp() > RhoQ1_comp);
+    if (rthp_on) {
+        rthp_vol = Geom(0).CellSize(0) * Geom(0).CellSize(1) * Geom(0).CellSize(2);
+        rthp_before = S_old.sum(RhoTheta_comp) * rthp_vol;
+        if (rthp_qv) rhqv_before = S_old.sum(RhoQ1_comp) * rthp_vol;
+    }
+
     advance_dycore(lev, state_old, state_new,
                    U_old, V_old, W_old,
                    U_new, V_new, W_new,
                    cc_source, xmom_source, ymom_source, zmom_source, buoyancy,
                    Geom(lev), dt_lev, time);
+
+    if (rthp_on) {
+        Real rthp_after = S_new.sum(RhoTheta_comp) * rthp_vol;
+        amrex::Print() << "[RHOTHETA-PROBE] t=" << time
+                       << " int_rhotheta=" << rthp_after
+                       << " d_dycore=" << (rthp_after - rthp_before);
+        if (rthp_qv) {
+            Real rhqv_after = S_new.sum(RhoQ1_comp) * rthp_vol;
+            amrex::Print() << "  int_rhoqv=" << rhqv_after
+                           << " d_qv=" << (rhqv_after - rhqv_before);
+        }
+        amrex::Print() << std::endl;
+    }
 
     // **************************************************************************************
     // Tests on the reasonableness of the solution after the dycore

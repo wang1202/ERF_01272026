@@ -195,6 +195,23 @@ void erf_slow_rhs_post (int level, int finest_level,
     // *************************************************************************
     // Define updates and fluxes in the current RK stage
     // *************************************************************************
+    // [CONS-FIX moisture] Conserve the prognostic Eulerian moisture scalar RhoQ1_comp across
+    // the multi-box advection (same leak as rho*theta). For SuperDroplets RhoQ1_comp is TOTAL
+    // water q_t (MicVar_SD order is q_t, q_v, q_c, ...), which is the correct conserved
+    // quantity; the phase change re-derives q_v = q_t - q_c from it. Snapshot the advective
+    // tendency here, remove its spurious domain-mean from the updated state below, and CLIP to
+    // >= 0 (q_t is positivity-bounded and has zero-valued cells, so an unclipped shift would
+    // drive them negative -> qr = q_t < 0 trips the microphysics assertion).
+    // Scaled by the input knob erf.conservation_fix_coeff (1=on, 0=off), shared with rho*theta.
+    const Real cons_fix_coeff = solverChoice.conservation_fix_coeff;
+    const bool l_fix_qv = l_anelastic && (nvars > RhoQ1_comp) && (cons_fix_coeff != Real(0.0));
+    MultiFab qv_adv_snap;
+    if (l_fix_qv) {
+        qv_adv_snap.define(S_data[IntVars::cons].boxArray(),
+                           S_data[IntVars::cons].DistributionMap(), nvars, 0);
+        qv_adv_snap.setVal(0.0);
+    }
+
 #ifdef _OPENMP
 #pragma omp parallel if (Gpu::notInLaunchRegion())
 #endif
@@ -431,6 +448,13 @@ void erf_slow_rhs_post (int level, int finest_level,
                     }
                 }
 
+                if (l_fix_qv) {
+                    auto snap = qv_adv_snap.array(mfi);
+                    ParallelFor(tbx, num_comp, [=] AMREX_GPU_DEVICE (int i,int j,int k,int nn) noexcept {
+                        snap(i,j,k,start_comp+nn) = cell_rhs(i,j,k,start_comp+nn);
+                    });
+                }
+
                 if (l_use_diff)
                 {
                     // Allow for implicit moisture diffusion
@@ -625,4 +649,43 @@ void erf_slow_rhs_post (int level, int finest_level,
         } // end profile
       } // mfi
     } // OMP
+
+    // [CONS-FIX moisture] remove the spurious advective domain-mean of RhoQ1_comp (= total
+    // water q_t for SuperDroplets) from the updated state, with a positivity clip
+    // (q_t -> max(q_t,0)). Closed-domain guard via boundary momentum, as for rho*theta.
+    if (l_fix_qv) {
+        Real bnd_mom = 0.;
+        const Box& dom = geom.Domain();
+        const int ixlo=dom.smallEnd(0), ixhi=dom.bigEnd(0)+1;
+        const int jylo=dom.smallEnd(1), jyhi=dom.bigEnd(1)+1;
+        const int kzlo=dom.smallEnd(2), kzhi=dom.bigEnd(2)+1;
+        for (MFIter mfi(avg_xmom); mfi.isValid(); ++mfi) { auto a=avg_xmom.const_array(mfi); const Box b=mfi.validbox();
+            amrex::LoopOnCpu(b,[&](int i,int j,int k){ if(i==ixlo||i==ixhi) bnd_mom=amrex::max(bnd_mom,std::abs(a(i,j,k))); }); }
+        for (MFIter mfi(avg_ymom); mfi.isValid(); ++mfi) { auto a=avg_ymom.const_array(mfi); const Box b=mfi.validbox();
+            amrex::LoopOnCpu(b,[&](int i,int j,int k){ if(j==jylo||j==jyhi) bnd_mom=amrex::max(bnd_mom,std::abs(a(i,j,k))); }); }
+        for (MFIter mfi(avg_zmom); mfi.isValid(); ++mfi) { auto a=avg_zmom.const_array(mfi); const Box b=mfi.validbox();
+            amrex::LoopOnCpu(b,[&](int i,int j,int k){ if(k==kzlo||k==kzhi) bnd_mom=amrex::max(bnd_mom,std::abs(a(i,j,k))); }); }
+        amrex::ParallelDescriptor::ReduceRealMax(bnd_mom);
+
+        if (bnd_mom < Real(1.e-12)) {
+            const Long ncells = domain.numPts();
+            const Real fac = (l_anelastic && (nrk == 1)) ? myhalf : one;
+            const int n = RhoQ1_comp;
+            const Real shift = cons_fix_coeff * fac * dt * (qv_adv_snap.sum(n) / Real(ncells));
+            if (shift != Real(0.0)) {
+#ifdef _OPENMP
+#pragma omp parallel if (Gpu::notInLaunchRegion())
+#endif
+                for (MFIter mfi(S_data[IntVars::cons],TileNoZ()); mfi.isValid(); ++mfi) {
+                    const Box& bx = mfi.tilebox();
+                    auto sd = S_data[IntVars::cons].array(mfi);
+                    auto sn = S_new [IntVars::cons].array(mfi);
+                    ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i,int j,int k) noexcept {
+                        sd(i,j,k,n) = amrex::max(sd(i,j,k,n) - shift, Real(0.0));
+                        sn(i,j,k,n) = amrex::max(sn(i,j,k,n) - shift, Real(0.0));
+                    });
+                }
+            }
+        }
+    }
 }

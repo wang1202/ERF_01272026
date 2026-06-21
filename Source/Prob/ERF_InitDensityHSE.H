@@ -204,10 +204,21 @@ erf_init_const_dens_and_th_hse (amrex::MultiFab& rho_hse, amrex::MultiFab&  p_hs
     amrex::ParmParse pp_prob("prob");
     amrex::Real dtheta_dz = zero; pp_prob.query("dtheta_dz",dtheta_dz);
 
-    rho_hse.setVal(rho_0);
-    th_hse.setVal(T_0);
+    // By default prob.T_0 is interpreted as potential temperature (theta).
+    // Set prob.T_0_is_temperature=true to interpret it as the absolute
+    // temperature and convert to theta using the dry ideal-gas base pressure
+    // (p = rho_0 R_d T_0); theta = T_0 (p_0/p)^(R/cp).
+    bool T_0_is_temperature = false; pp_prob.query("T_0_is_temperature", T_0_is_temperature);
+    amrex::Real theta_0 = T_0;
+    if (T_0_is_temperature) {
+        amrex::Real p0_ideal = rho_0 * R_d * T_0;
+        theta_0 = getThgivenTandP(T_0, p0_ideal, l_rdOcp);
+    }
 
-    amrex::Real rt0 = rho_0 * T_0;
+    rho_hse.setVal(rho_0);
+    th_hse.setVal(theta_0);
+
+    amrex::Real rt0 = rho_0 * theta_0;
 
     amrex::Real p0  = getPgivenRTh(rt0);
     p_hse.setVal(p0);

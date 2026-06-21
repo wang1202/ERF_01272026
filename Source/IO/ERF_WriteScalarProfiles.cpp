@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <fstream>
 
 #include "ERF.H"
 #include "ERF_Derive.H"
@@ -128,6 +129,26 @@ ERF::sum_integrated_quantities (double time)
            Print() << " RHO THETA  SL/ML = " << rhth_sl << " " << rhth_ml << '\n';
            if (solverChoice.transport_scalar) { Print() << " RHO SCALAR SL/ML = " << scal_sl << " " << scal_ml << '\n'; }
            if (solverChoice.moisture_type != MoistureType::None) { Print() << " RHO QTOTAL SL/ML = " << mois_sl << " " << mois_ml << '\n'; }
+        }
+
+        // Conservation monitor: domain-integrated rho, rho*theta, rho*qtotal vs time
+        // (single-level/level-0 sums). Compare d/dt(int rho*theta) against the net wall
+        // heat flux (wallflux_lev0.txt) to test for energy non-closure in the closed
+        // chamber: in a conservative closed domain d/dt(int rho*theta) == net wall flux.
+        {
+            static std::ofstream cons_log;
+            if (!cons_log.is_open()) {
+                cons_log.open("conservation_lev0.txt", std::ios::out | std::ios::app);
+                if (cons_log.tellp() == std::streampos(0)) {
+                    cons_log << "# time  int_rho  int_rhotheta  int_rhoqtotal\n";
+                }
+            }
+            if (cons_log.good()) {
+                cons_log << std::setprecision(timeprecision) << time << "  "
+                         << std::setprecision(datprecision)  << mass_sl << "  "
+                         << rhth_sl << "  " << mois_sl << "\n";
+                cons_log.flush();
+            }
         }
 
         // The first data log only holds scalars

@@ -1144,6 +1144,16 @@ struct SolverChoice {
             pp_wf.query(query_name.c_str(), fp.wetness);
         }
 
+        // Backward-compatible shortcut used by CloudChamber cases: keep side
+        // walls as momentum walls, but remove side-wall scalar exchange.
+        pp_wf.query("side_adiabatic", wallflux_level.side_adiabatic);
+        if (wallflux_level.side_adiabatic) {
+            for (int face = 0; face < 4; ++face) {
+                wallflux_level.face[face].Ch = amrex::Real(0.0);
+                wallflux_level.face[face].Cq = amrex::Real(0.0);
+            }
+        }
+
         // Sidewall pattern: "uniform" (default) or "two_layer"
         std::string sidewall_pattern = "uniform";
         pp_wf.query("sidewall_pattern", sidewall_pattern);

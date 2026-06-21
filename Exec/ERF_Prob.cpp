@@ -125,6 +125,9 @@ Problem::init_custom_pert (
     else if (my_prob_name_ci == "userdefined") {
 #include "Prob/ERF_InitCustomPert_UserDefined.H"
     }
+    else if (my_prob_name_ci == "cloudchamber") {
+#include "Prob/ERF_InitCustomPert_CloudChamber.H"
+    }
     else if (my_prob_name_ci == "bubble") {
 #include "Prob/ERF_InitCustomPert_Bubble.H"
     }
@@ -240,6 +243,9 @@ Problem::init_custom_pert_vels (
     }
     else if (my_prob_name_ci == "userdefined") {
 #include "Prob/ERF_InitCustomPertVels_UserDefined.H"
+    }
+    else if (my_prob_name_ci == "cloudchamber") {
+#include "Prob/ERF_InitCustomPertVels_CloudChamber.H"
     }
      else if  (my_prob_name_ci == "data_assimilation_isv") {
 #include "Prob/ERF_InitCustomPertVels_DataAssimilation_ISV.H"

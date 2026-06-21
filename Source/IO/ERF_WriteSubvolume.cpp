@@ -304,7 +304,32 @@ ERF::WriteSubvolume (int isub,Vector<std::string> subvol_var_names)
     //       defined in ERF.H
     // *****************************************************************************************
 
-    if (solverChoice.moisture_type != MoistureType::None) {
+    if (solverChoice.anelastic[lev_for_sub] == 1) {
+        // Anelastic: rho is pinned to rho_0, so the compressible EOS temperature is inflated by
+        // the moisture factor (~2 K). The correct temperature is theta*pi0 (base-state Exner),
+        // matching the plotfile and qsat conventions.
+        if (containerHasElement(subvol_var_names, "temp")) {
+            MultiFab& src_mf = vars_new[lev_for_sub][Vars::cons];
+            MultiFab pi_hse(base_state[lev_for_sub], amrex::make_alias, BaseState::pi0_comp, 1);
+            MultiFab dmf(src_mf.boxArray(), src_mf.DistributionMap(), 1, 0);
+#ifdef _OPENMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+            for (MFIter mfi(dmf, TilingIfNotGPU()); mfi.isValid(); ++mfi)
+            {
+                const Box& tbx = mfi.tilebox();
+                const Array4<Real      >& d_arr  = dmf.array(mfi);
+                const Array4<Real const>& S_arr  = src_mf.const_array(mfi);
+                const Array4<Real const>& pi_arr = pi_hse.const_array(mfi);
+                ParallelFor(tbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
+                {
+                    d_arr(i,j,k) = (S_arr(i,j,k,RhoTheta_comp)/S_arr(i,j,k,Rho_comp)) * pi_arr(i,j,k);
+                });
+            }
+            mf.ParallelCopy(dmf,0,mf_comp,1,0,0);
+            mf_comp++;
+        }
+    } else if (solverChoice.moisture_type != MoistureType::None) {
         calculate_derived("temp",    vars_new[lev_for_sub][Vars::cons], derived::erf_dermoisttemp);
     } else {
         calculate_derived("temp",    vars_new[lev_for_sub][Vars::cons], derived::erf_dertemp);

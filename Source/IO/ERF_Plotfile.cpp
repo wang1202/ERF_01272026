@@ -573,7 +573,32 @@ ERF::Write3DPlotFile (int which, PlotFileType plotfile_type, Vector<std::string>
         //       defined in ERF.H
         // *****************************************************************************************
 
-        if (use_moisture) {
+        if (solverChoice.anelastic[lev] == 1) {
+            // Anelastic: rho is pinned to rho_0, so the compressible EOS temperature
+            // (getTgivenRandRTh) is thermodynamically inconsistent -- it is inflated by the
+            // moisture factor (~2 K for q~0.01) and inverts the RH profile. The correct
+            // temperature is the hydrostatic base T = theta*pi0 (same convention as the
+            // anelastic qsat below).
+            if (containerHasElement(plot_var_names, "temp")) {
+                MultiFab pi_hse(base_state[lev], amrex::make_alias, BaseState::pi0_comp, 1);
+                MultiFab dmf(mf[lev], make_alias, mf_comp, 1);
+#ifdef _OPENMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+                for (MFIter mfi(dmf, TilingIfNotGPU()); mfi.isValid(); ++mfi)
+                {
+                    const Box& bx = mfi.tilebox();
+                    const Array4<Real      >& d_arr  = dmf.array(mfi);
+                    const Array4<Real const>& S_arr  = vars_new[lev][Vars::cons].const_array(mfi);
+                    const Array4<Real const>& pi_arr = pi_hse.const_array(mfi);
+                    ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
+                    {
+                        d_arr(i,j,k) = (S_arr(i,j,k,RhoTheta_comp)/S_arr(i,j,k,Rho_comp)) * pi_arr(i,j,k);
+                    });
+                }
+                mf_comp++;
+            }
+        } else if (use_moisture) {
             calculate_derived("temp",        vars_new[lev][Vars::cons], derived::erf_dermoisttemp);
         } else {
             calculate_derived("temp",        vars_new[lev][Vars::cons], derived::erf_dertemp);

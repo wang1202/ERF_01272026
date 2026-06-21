@@ -123,7 +123,8 @@ WriteBndryPlanes::WriteBndryPlanes (Vector<BoxArray>& grids,
  */
 void WriteBndryPlanes::write_planes (const int t_step, const Real time,
                                      Vector<Vector<MultiFab>>& vars_new,
-                                     bool is_moist)
+                                     Vector<MultiFab>& base_state,
+                                     bool is_moist, bool is_anelastic)
 {
     BL_PROFILE("ERF::WriteBndryPlanes::write_planes");
 
@@ -171,15 +172,33 @@ void WriteBndryPlanes::write_planes (const int t_step, const Real time,
 
         } else if (var_name == "temperature") {
             MultiFab Temp(S.boxArray(),S.DistributionMap(),ncomp,0);
-            for (MFIter mfi(Temp, TilingIfNotGPU()); mfi.isValid(); ++mfi)
-            {
-                const Box& bx = mfi.tilebox();
-                if (is_moist) {
-                    // NOTE: we send in S[mfi] where we should send in (*z_phys_cc[lev])[mfi] because we know this routine doesn't use it
-                    derived::erf_dermoisttemp(bx, Temp[mfi], 0, 1, S[mfi], S[mfi], m_geom[bndry_lev], time, nullptr, bndry_lev);
-                } else {
-                    // NOTE: we send in S[mfi] where we should send in (*z_phys_cc[lev])[mfi] because we know this routine doesn't use it
-                    derived::erf_dertemp(bx, Temp[mfi], 0, 1, S[mfi], S[mfi], m_geom[bndry_lev], time, nullptr, bndry_lev);
+            if (is_anelastic) {
+                // Anelastic: rho is pinned to rho_0, so the compressible EOS temperature is
+                // inflated by the moisture factor (~2 K). Use theta*pi0 (base-state Exner),
+                // matching the plotfile/subvolume/qsat conventions.
+                MultiFab pi_hse(base_state[bndry_lev], amrex::make_alias, BaseState::pi0_comp, 1);
+                for (MFIter mfi(Temp, TilingIfNotGPU()); mfi.isValid(); ++mfi)
+                {
+                    const Box& bx = mfi.tilebox();
+                    const Array4<Real      >& d_arr  = Temp.array(mfi);
+                    const Array4<Real const>& S_arr  = S.const_array(mfi);
+                    const Array4<Real const>& pi_arr = pi_hse.const_array(mfi);
+                    ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
+                    {
+                        d_arr(i,j,k) = (S_arr(i,j,k,RhoTheta_comp)/S_arr(i,j,k,Rho_comp)) * pi_arr(i,j,k);
+                    });
+                }
+            } else {
+                for (MFIter mfi(Temp, TilingIfNotGPU()); mfi.isValid(); ++mfi)
+                {
+                    const Box& bx = mfi.tilebox();
+                    if (is_moist) {
+                        // NOTE: we send in S[mfi] where we should send in (*z_phys_cc[lev])[mfi] because we know this routine doesn't use it
+                        derived::erf_dermoisttemp(bx, Temp[mfi], 0, 1, S[mfi], S[mfi], m_geom[bndry_lev], time, nullptr, bndry_lev);
+                    } else {
+                        // NOTE: we send in S[mfi] where we should send in (*z_phys_cc[lev])[mfi] because we know this routine doesn't use it
+                        derived::erf_dertemp(bx, Temp[mfi], 0, 1, S[mfi], S[mfi], m_geom[bndry_lev], time, nullptr, bndry_lev);
+                    }
                 }
             }
             bndry.copyFrom(Temp, nghost, 0, 0, ncomp, m_geom[bndry_lev].periodicity());

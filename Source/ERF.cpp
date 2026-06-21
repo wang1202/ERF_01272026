@@ -926,7 +926,8 @@ ERF::post_timestep (int nstep, double time, Real dt_lev0)
           time >= bndry_output_planes_start_time)
       {
          bool is_moist = (micro->Get_Qstate_Moist_Size() > 0);
-         m_w2d->write_planes(istep[0], time+start_time, vars_new, is_moist);
+         bool is_anelastic = (solverChoice.anelastic[0] == 1);
+         m_w2d->write_planes(istep[0], time+start_time, vars_new, base_state, is_moist, is_anelastic);
       }
     }
 
@@ -1375,7 +1376,8 @@ ERF::InitData_post ()
         Real tot_time = t_new[0]+start_time;
         if (tot_time >= bndry_output_planes_start_time) {
             bool is_moist = (micro->Get_Qstate_Moist_Size() > 0);
-            m_w2d->write_planes(0, tot_time, vars_new, is_moist);
+            bool is_anelastic = (solverChoice.anelastic[0] == 1);
+            m_w2d->write_planes(0, tot_time, vars_new, base_state, is_moist, is_anelastic);
         }
     }
 

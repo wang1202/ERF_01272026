@@ -7,7 +7,7 @@ amrex.fpe_trap_invalid = 0
 erf.use_fft = 1
 erf.anelastic = 1
 erf.init_type = "uniform"
-erf.prob_name = "userdefined"
+erf.prob_name = "cloudchamber"
 
 fabarray.mfiter_tile_size = 1024 1024 1024
 
@@ -86,6 +86,7 @@ erf.Sc_t      = 0.377
 # PROBLEM PARAMETERS (Thermodynamic targets)
 prob.rho_0 = 1.20984   # kg/m3 = p_0/(R_d*T_0) = 1e5/(287*288); makes the dry-EOS base-state HSE self-consistent: p_hse=1e5, pi0=1, so T=theta exactly
 prob.T_0  = 288.0      # K (used as theta_0 in uniform init)
+prob.T_0_is_temperature = 1  # interpret prob.T_0 as temperature, not potential temperature
 prob.p_0  = 100000.0   # Pa (for qsat calculation in UserDefined init)
 prob.rh_0 = 1.0       # unitless (0–1). Use 1.0 for exactly saturated, qc=0.
 
@@ -100,7 +101,12 @@ prob.T_0_Pert_Mag = 0.1
 
 # MOISTURE MODEL - Super Droplet Method
 erf.moisture_model  = "SuperDroplets"
-erf.buoyancy_type = 1
+erf.buoyancy_type = 4
+
+# Ad-hoc multi-box scalar-conservation correction for rho*theta and total water (RhoQ1/q_t).
+# 1.0 = full correction (default), 0.0 = OFF (reproduces the multi-box conservation leak),
+# in-between = partial. See Docs/multibox_conservation_stopgap.md.
+erf.conservation_fix_coeff = 1.0
 
 # WALL FLUX CONFIGURATION
 erf.use_wall_fluxes = true

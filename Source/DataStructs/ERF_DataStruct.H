@@ -1157,6 +1157,9 @@ struct SolverChoice {
             for (int face = 0; face < 4; ++face) {
                 wallflux_level.face[face].Ch = amrex::Real(0.0);
                 wallflux_level.face[face].Cq = amrex::Real(0.0);
+                // Also suppress molecular wall conduction so the side walls are
+                // truly adiabatic (zero total scalar flux), not just zero turbulent flux.
+                wallflux_level.face[face].scalar_adiabatic = true;
             }
         }
 

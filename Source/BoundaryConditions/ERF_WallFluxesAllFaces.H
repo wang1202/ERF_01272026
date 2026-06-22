@@ -38,6 +38,7 @@ struct WallFaceParams {
     amrex::Real Cq{1.5e-3};        ///< Moisture exchange coefficient (dimensionless)
     amrex::Real T_wall{293.0};     ///< Wall thermodynamic temperature [K]
     amrex::Real wetness{1.0};      ///< Wall wetness (0.0=dry, 1.0=saturated) [dimensionless]
+    bool scalar_adiabatic{false};  ///< If true, zero total heat/moisture flux on this face (turbulent + molecular)
 
     /// Momentum model for this face
     enum class MomModel {

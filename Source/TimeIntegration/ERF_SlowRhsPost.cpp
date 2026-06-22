@@ -1,4 +1,5 @@
 #include <AMReX.H>
+#include <AMReX_ParReduce.H>
 #include <ERF_SrcHeaders.H>
 #include <ERF_TI_slow_headers.H>
 #include <ERF_EBAdvection.H>
@@ -654,17 +655,43 @@ void erf_slow_rhs_post (int level, int finest_level,
     // water q_t for SuperDroplets) from the updated state, with a positivity clip
     // (q_t -> max(q_t,0)). Closed-domain guard via boundary momentum, as for rho*theta.
     if (l_fix_qv) {
-        Real bnd_mom = 0.;
         const Box& dom = geom.Domain();
         const int ixlo=dom.smallEnd(0), ixhi=dom.bigEnd(0)+1;
         const int jylo=dom.smallEnd(1), jyhi=dom.bigEnd(1)+1;
         const int kzlo=dom.smallEnd(2), kzhi=dom.bigEnd(2)+1;
-        for (MFIter mfi(avg_xmom); mfi.isValid(); ++mfi) { auto a=avg_xmom.const_array(mfi); const Box b=mfi.validbox();
-            amrex::LoopOnCpu(b,[&](int i,int j,int k){ if(i==ixlo||i==ixhi) bnd_mom=amrex::max(bnd_mom,std::abs(a(i,j,k))); }); }
-        for (MFIter mfi(avg_ymom); mfi.isValid(); ++mfi) { auto a=avg_ymom.const_array(mfi); const Box b=mfi.validbox();
-            amrex::LoopOnCpu(b,[&](int i,int j,int k){ if(j==jylo||j==jyhi) bnd_mom=amrex::max(bnd_mom,std::abs(a(i,j,k))); }); }
-        for (MFIter mfi(avg_zmom); mfi.isValid(); ++mfi) { auto a=avg_zmom.const_array(mfi); const Box b=mfi.validbox();
-            amrex::LoopOnCpu(b,[&](int i,int j,int k){ if(k==kzlo||k==kzhi) bnd_mom=amrex::max(bnd_mom,std::abs(a(i,j,k))); }); }
+
+        const IntVect ng0(0);
+        auto const& ax = avg_xmom.const_arrays();
+        GpuTuple<Real> x_bnd_mom = ParReduce(TypeList<ReduceOpMax>{},
+                                             TypeList<Real>{},
+                                             avg_xmom, ng0,
+            [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k) noexcept
+            -> GpuTuple<Real>
+            {
+                return { (i == ixlo || i == ixhi) ? amrex::Math::abs(ax[box_no](i,j,k)) : zero };
+            });
+
+        auto const& ay = avg_ymom.const_arrays();
+        GpuTuple<Real> y_bnd_mom = ParReduce(TypeList<ReduceOpMax>{},
+                                             TypeList<Real>{},
+                                             avg_ymom, ng0,
+            [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k) noexcept
+            -> GpuTuple<Real>
+            {
+                return { (j == jylo || j == jyhi) ? amrex::Math::abs(ay[box_no](i,j,k)) : zero };
+            });
+
+        auto const& az = avg_zmom.const_arrays();
+        GpuTuple<Real> z_bnd_mom = ParReduce(TypeList<ReduceOpMax>{},
+                                             TypeList<Real>{},
+                                             avg_zmom, ng0,
+            [=] AMREX_GPU_DEVICE (int box_no, int i, int j, int k) noexcept
+            -> GpuTuple<Real>
+            {
+                return { (k == kzlo || k == kzhi) ? amrex::Math::abs(az[box_no](i,j,k)) : zero };
+            });
+
+        Real bnd_mom = amrex::max(amrex::max(get<0>(x_bnd_mom), get<0>(y_bnd_mom)), get<0>(z_bnd_mom));
         amrex::ParallelDescriptor::ReduceRealMax(bnd_mom);
 
         if (bnd_mom < Real(1.e-12)) {

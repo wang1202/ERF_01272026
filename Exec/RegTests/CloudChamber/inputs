@@ -48,7 +48,7 @@ erf.check_int       = 2000       # number of timesteps between checkpoints
 # PLOTFILES
 erf.plot_file_1     = plt        # prefix of plotfile name
 erf.plot_int_1      = 2000        # number of timesteps between plotfiles
-erf.plot_vars_1     = density rhotheta x_velocity y_velocity z_velocity pressure temp theta qt qv qc qsat qrain rel_humidity rain_accum
+erf.plot_vars_1     = density rhotheta x_velocity y_velocity z_velocity pressure temp theta qt qv qc qsat qrain rel_humidity rain_accum condensation_rate super_droplets_moisture_number_density super_droplets_moisture_sd_number_density super_droplets_moisture_mass_density super_droplets_moisture_radius
 
 # Enable particle output for visualization of individual droplets
 particles.disable_plt = false
@@ -84,8 +84,8 @@ erf.Sc_t      = 0.377
 # erf.input_sounding_file = "input_sounding_file"
 
 # PROBLEM PARAMETERS (Thermodynamic targets)
-prob.rho_0 = 1.20984   # kg/m3 = p_0/(R_d*T_0) = 1e5/(287*288); makes the dry-EOS base-state HSE self-consistent: p_hse=1e5, pi0=1, so T=theta exactly
-prob.T_0  = 288.0      # K (used as theta_0 in uniform init)
+prob.p_inf = 100000.0  # Pa; reference pressure used to derive rho_0 = p_inf/(R_d*T_0), giving p_hse=1e5 and pi0=1
+prob.T_0  = 288.0      # K absolute temperature (converted to theta via T_0_is_temperature)
 prob.T_0_is_temperature = 1  # interpret prob.T_0 as temperature, not potential temperature
 prob.p_0  = 100000.0   # Pa (for qsat calculation in UserDefined init)
 prob.rh_0 = 1.0       # unitless (0–1). Use 1.0 for exactly saturated, qc=0.
@@ -312,5 +312,4 @@ super_droplets_moisture.newton_solver_maxits = 20
 
 # Brownian coalescence (typically small effect, can disable for performance)
 super_droplets_moisture.include_brownian_coalescence = false
-
 

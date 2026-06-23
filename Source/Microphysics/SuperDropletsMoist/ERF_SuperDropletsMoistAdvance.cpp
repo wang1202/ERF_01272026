@@ -102,6 +102,10 @@ void SuperDropletsMoist::Advance ( const Real& a_dt,
                                             m_recycle_particles );
     }
 
+    // Size-dependent loss of super-droplets to the (lateral) side walls.
+    // No-op unless super_droplets.wall_loss.enable = true.
+    m_super_droplets->WallLoss( current_lev, a_dt, a_time, a_iter, a_bc );
+
     // Coalescence of super-droplets
     if (m_flag_coalescence) {
         m_super_droplets->Coalescence(  current_lev,

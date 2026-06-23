@@ -122,6 +122,68 @@ void SuperDropletPC::readInputs (const amrex::Real a_dt)
     pp.query("recycle_zmin", m_recyc_zmin);
     pp.query("recycle_zmax", m_recyc_zmax);
 
+    // --- Boundary-deposition wall-loss parameterization (see ERF_SDWallLoss.H) ---
+    // (1) On/off switch.
+    pp.query("wall_loss.enable", m_wall_loss.enable);
+
+    // (2) Removal method: deterministic (Option A) or stochastic (Option B).
+    {
+        std::string wl_method = "deterministic";
+        pp.query("wall_loss.method", wl_method);
+        if (wl_method == "deterministic" || wl_method == "exponential") {
+            m_wall_loss.method = SDWL_Deterministic;
+        } else if (wl_method == "stochastic" || wl_method == "binomial") {
+            m_wall_loss.method = SDWL_Stochastic;
+        } else {
+            amrex::Abort("Error in SuperDropletPC::readInputs() - invalid wall_loss.method "
+                         "(valid: deterministic, stochastic)");
+        }
+    }
+
+    // (3) Deactivate super-droplets whose multiplicity decays toward zero.
+    pp.query("wall_loss.deactivate_on_depletion", m_wall_loss.deactivate_on_depletion);
+    pp.query("wall_loss.deactivate_threshold",    m_wall_loss.deactivate_threshold);
+
+    // Turbulent deposition-velocity model.
+    {
+        std::string wl_model = "constant";
+        pp.query("wall_loss.deposition_velocity_model", wl_model);
+        if (wl_model == "constant") {
+            m_wall_loss.dep_vel_model = SDWL_Constant;
+        } else if (wl_model == "diffusion" || wl_model == "stokes_einstein") {
+            m_wall_loss.dep_vel_model = SDWL_Diffusion;
+        } else {
+            amrex::Abort("Error in SuperDropletPC::readInputs() - invalid wall_loss.deposition_velocity_model "
+                         "(valid: constant, diffusion)");
+        }
+    }
+
+    // (4) Per-boundary deposition velocities.  A single "deposition_velocity"
+    //     key sets all three as a convenient default; per-boundary keys override.
+    Real vd_default = m_wall_loss.vd_side;
+    if (pp.query("wall_loss.deposition_velocity", vd_default)) {
+        m_wall_loss.vd_side   = vd_default;
+        m_wall_loss.vd_top    = vd_default;
+        m_wall_loss.vd_bottom = vd_default;
+    }
+    pp.query("wall_loss.vd_side",   m_wall_loss.vd_side);
+    pp.query("wall_loss.vd_top",    m_wall_loss.vd_top);
+    pp.query("wall_loss.vd_bottom", m_wall_loss.vd_bottom);
+    pp.query("wall_loss.settling_correction", m_wall_loss.settling_correction);
+
+    pp.query("wall_loss.diffusion_temperature", m_wall_loss.diff_temperature);
+    pp.query("wall_loss.diffusion_viscosity",   m_wall_loss.diff_viscosity);
+    pp.query("wall_loss.diffusion_delta",       m_wall_loss.diff_delta);
+    pp.query("wall_loss.vd_floor",              m_wall_loss.vd_floor);
+    pp.query("wall_loss.num_bins",  m_wall_loss.num_bins);
+    pp.query("wall_loss.bin_rmin",  m_wall_loss.bin_rmin);
+    pp.query("wall_loss.bin_rmax",  m_wall_loss.bin_rmax);
+    pp.query("wall_loss.diag_interval", m_wall_loss.diag_interval);
+    if (m_wall_loss.num_bins > SDWL_MAX_BINS) {
+        amrex::Warning("SuperDropletPC::readInputs() - wall_loss.num_bins exceeds SDWL_MAX_BINS; clamping.");
+        m_wall_loss.num_bins = SDWL_MAX_BINS;
+    }
+
     std::string ti_name = "backward_euler";
     pp.query("mass_change_cfl", m_mass_change_cfl);
     pp.query("mass_change_ti_method", ti_name);
@@ -195,6 +257,20 @@ void SuperDropletPC::readInputs (const amrex::Real a_dt)
         std::string prefix = str + "." + std::string(i_str);
         m_injections[i]->readInputs(str, Geom(0), m_species_mat, m_aerosol_mat, a_dt);
         m_injections[i]->readInputs(prefix, Geom(0), m_species_mat, m_aerosol_mat, a_dt);
+    }
+
+    if (m_wall_loss.enable) {
+        amrex::Print() << "SuperDropletPC(" << m_name << "): boundary deposition loss enabled"
+                       << ", method=" << (m_wall_loss.method == SDWL_Stochastic ? "stochastic" : "deterministic")
+                       << ", vd model=" << (m_wall_loss.dep_vel_model == SDWL_Diffusion ? "diffusion" : "constant");
+        if (m_wall_loss.dep_vel_model == SDWL_Constant) {
+            amrex::Print() << ", vd_side=" << m_wall_loss.vd_side
+                           << " vd_top=" << m_wall_loss.vd_top
+                           << " vd_bottom=" << m_wall_loss.vd_bottom << " m/s";
+        }
+        amrex::Print() << ", settling=" << (m_wall_loss.settling_correction ? "on" : "off")
+                       << ", deactivate=" << (m_wall_loss.deactivate_on_depletion ? "on" : "off")
+                       << ", " << m_wall_loss.num_bins << " size bins.\n";
     }
 
     return;

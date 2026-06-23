@@ -8,6 +8,7 @@
 #include "ERF_MaterialProperties.H"
 #include "ERF_SuperDropletPCDefinitions.H"
 #include "ERF_SuperDropletPCProcess.H"
+#include "ERF_SDWallLoss.H"
 #include <AMReX_StructOfArrays.H>
 
 class SuperDropletPC : public ERFPC
@@ -228,6 +229,17 @@ class SuperDropletPC : public ERFPC
                                     const amrex::MultiFab& a_pressure,
                                     const amrex::MultiFab& a_temperature);
 
+        /*! \brief Apply size-dependent wall loss of super-droplets to the side walls.
+         *
+         * First-order absorbing-wall sink acting only in cells adjacent to the
+         * lateral (x/y) side walls; top/bottom (z) boundaries are excluded.
+         * See ERF_SDWallLoss.H for the formulation. */
+        virtual void WallLoss ( const int a_lev,
+                                const amrex::Real a_dt,
+                                const amrex::Real a_time,
+                                const int a_iter,
+                                const BCTypeArr& a_bctypes );
+
         /*! \brief Recycle super-droplets */
         virtual void Recycle ( const int a_lev,
                                const amrex::Vector<MFPtr>& a_z_phys_nd,
@@ -371,6 +383,15 @@ class SuperDropletPC : public ERFPC
 
         /*! species index of water */
         int m_idx_w = -1;
+
+        /*! Wall-loss parameterization configuration */
+        SDWallLossParams m_wall_loss;
+        /*! Cumulative deposited particle mass [kg] by boundary type (over all steps) */
+        amrex::Real m_wall_loss_dep_mass_side   = 0.0;
+        amrex::Real m_wall_loss_dep_mass_top    = 0.0;
+        amrex::Real m_wall_loss_dep_mass_bottom = 0.0;
+        /*! Whether the wall-loss diagnostics file header has been written */
+        bool m_wall_loss_log_initialized = false;
 
         /*! inactive particles threshold */
         amrex::Real m_deac_threshold;

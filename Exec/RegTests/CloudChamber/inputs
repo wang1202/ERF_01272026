@@ -12,8 +12,8 @@ erf.prob_name = "cloudchamber"
 fabarray.mfiter_tile_size = 1024 1024 1024
 
 # PROBLEM SIZE & GEOMETRY
-geometry.prob_lo =  0.  0.  0.
-geometry.prob_hi =  2.  2.  1.
+geometry.prob_lo = -1. -1.  0.
+geometry.prob_hi =  1.  1.  1.
 # amr.n_cell       = 128 128 64
 amr.n_cell       = 64 64 32
 

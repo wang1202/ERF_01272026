@@ -18,12 +18,14 @@ SurfaceLayer::update_fluxes (const int& lev,
                              int max_iters)
 {
     // Update with SST/TSK data if we have a valid pointer
-    if (!m_sst_lev[lev].empty() && m_sst_lev[lev][0]) {
+    if (!m_has_ocean_lsm_tsurf &&
+        !m_sst_lev[lev].empty() && m_sst_lev[lev][0]) {
         fill_tsurf_with_sst_and_tsk(lev, elapsed_time_since_start_low);
     }
 
     // Apply heating rate if needed
-    if (theta_type == ThetaCalcType::SURFACE_TEMPERATURE) {
+    if (theta_type == ThetaCalcType::SURFACE_TEMPERATURE &&
+        !m_has_ocean_lsm_tsurf) {
         update_surf_temp(elapsed_time_since_start_low);
     }
 
@@ -943,7 +945,7 @@ SurfaceLayer::compute_sfc_params_from_lsm_fluxes (const int& lev,
             // Skip cells the LSM did not flux (sea-ice / open water -> the LSM
             // wrote the lsm_flux_undefined sentinel). They keep the u*/T*/q*/L
             // from the MOST iteration (computed from the surface temperature).
-            // Using the sentinel here would give u_star ~ sqrt(1e30) and blow up
+            // Using the sentinel here would give u_star ~ sqrt(bogus_large_value) and blow up
             // the PBL on the next step.
             if (is_land && lsm_t_flux_arr && lsm_t_flux_arr(i,j,0) < lsm_flux_undefined) {
                 Real rho = cons_arr(i,j,klo,Rho_comp);
@@ -1104,6 +1106,8 @@ void
 SurfaceLayer::get_lsm_tsurf (const int& lev)
 {
     const int klo = m_geom[lev].Domain().smallEnd(2);
+    const bool has_sea_tsurf = (m_has_ocean_lsm_tsurf &&
+                                amrex::toLower(m_lsm_data_name[m_lsm_tsurf_indx]) == "t_surf");
     for (MFIter mfi(*t_surf[lev]); mfi.isValid(); ++mfi)
     {
         Box gtbx = mfi.growntilebox();
@@ -1126,7 +1130,8 @@ SurfaceLayer::get_lsm_tsurf (const int& lev)
         ParallelFor(gtbx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept
         {
             int is_land = (lmask_arr) ? lmask_arr(i,j,k) : 1;
-            if (is_land) {
+            if ((!has_sea_tsurf && is_land) ||
+                (has_sea_tsurf && !is_land)) {
                 int li = amrex::min(amrex::max(i, i_lo), i_hi);
                 int lj = amrex::min(amrex::max(j, j_lo), j_hi);
                 t_surf_arr(i,j,k) = lsm_arr(li,lj,k);

@@ -1035,6 +1035,11 @@ ERF::init_from_wrfinput (int lev, MultiFab& mf_PSFC_lev)
         Real tol  = Real(1.0e-10);
 #endif
         Real grav = CONST_GRAV;
+
+        MultiFab qt(lev_new[Vars::cons].boxArray(), lev_new[Vars::cons].DistributionMap(), 1, 0);
+        int n_qstate_into_total = micro->Get_Qstate_Moist_Size() - micro->Get_Qstate_Moist_NumConc_Size();
+        make_qt(lev_new[Vars::cons], qt, n_qstate_into_total);
+
         for ( MFIter mfi(lev_new[Vars::cons],TileNoZ()); mfi.isValid(); ++mfi ) {
             Box bx  = mfi.tilebox();
             int klo = bx.smallEnd(2);
@@ -1043,6 +1048,7 @@ ERF::init_from_wrfinput (int lev, MultiFab& mf_PSFC_lev)
             bx.makeSlab(2,klo);
 
             const Array4<      Real>& con_arr = lev_new[Vars::cons].array(mfi);
+            const Array4<const Real>&  qt_arr = qt.const_array(mfi);
             const Array4<const Real>& z_arr = z_phys_nd[lev]->const_array(mfi);
 
             ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int /*k*/) noexcept
@@ -1054,6 +1060,7 @@ ERF::init_from_wrfinput (int lev, MultiFab& mf_PSFC_lev)
                 Real z_lo, z_hi;
                 Real R_lo, R_hi;
                 Real qv_lo, qv_hi;
+                Real qt_lo, qt_hi;
                 Real Th_lo, Th_hi;
                 Real P_lo, P_hi;
 
@@ -1062,29 +1069,31 @@ ERF::init_from_wrfinput (int lev, MultiFab& mf_PSFC_lev)
                     // Vertical grid spacing
                     z_lo = zero; // corresponding to p_0
                     z_hi = Real(0.125) * (z_arr(i,j,klo  ) + z_arr(i+1,j,klo  ) + z_arr(i,j+1,klo  ) + z_arr(i+1,j+1,klo  )
-                                   +z_arr(i,j,klo+1) + z_arr(i+1,j,klo+1) + z_arr(i,j+1,klo+1) + z_arr(i+1,j+1,klo+1));
+                                         +z_arr(i,j,klo+1) + z_arr(i+1,j,klo+1) + z_arr(i,j+1,klo+1) + z_arr(i+1,j+1,klo+1));
                     dz = z_hi - z_lo;
 
                     // Establish known constant
+                    qt_lo =  qt_arr(i,j,klo);
                     qv_lo = con_arr(i,j,klo,RhoQ1_comp)    / con_arr(i,j,klo,Rho_comp);
                     Th_lo = con_arr(i,j,klo,RhoTheta_comp) / con_arr(i,j,klo,Rho_comp);
                     P_lo  = p_0;
                     R_lo  = getRhogivenThetaPress(Th_lo, P_lo, R_d/Cp_d, qv_lo);
-                    rho_tot_lo = R_lo * (one + qv_lo);
+                    rho_tot_lo = R_lo * (one + qt_lo);
                     C  = -P_lo + myhalf*rho_tot_lo*grav*dz;
 
                     // Initial guess and residual
+                    qt_hi = qt_arr(i,j,klo);
                     qv_hi = con_arr(i,j,klo,RhoQ1_comp)    / con_arr(i,j,klo,Rho_comp);
                     Th_hi = con_arr(i,j,klo,RhoTheta_comp) / con_arr(i,j,klo,Rho_comp);
                     P_hi  = p_0;
                     R_hi  = getRhogivenThetaPress(Th_hi, P_hi, R_d/Cp_d, qv_hi);
-                    rho_tot_hi = R_hi * (one + qv_hi);
+                    rho_tot_hi = R_hi * (one + qt_hi);
                     F = P_hi + myhalf*rho_tot_hi*grav*dz + C;
 
                     // Do iterations
                     HSEutils::Newton_Raphson_hse(tol, R_d/Cp_d, dz,
                                                  grav, C, Th_hi,
-                                                 qv_hi, qv_hi,
+                                                 qt_hi, qv_hi,
                                                  P_hi, R_hi, F);
 
                     // Assign data
@@ -1098,27 +1107,29 @@ ERF::init_from_wrfinput (int lev, MultiFab& mf_PSFC_lev)
                 for (int k(klo+1); k<=khi; ++k) {
                     // Vertical grid spacing
                   z_hi = Real(0.125) * (z_arr(i,j,k  ) + z_arr(i+1,j,k  ) + z_arr(i,j+1,k  ) + z_arr(i+1,j+1,k  )
-                                 +z_arr(i,j,k+1) + z_arr(i+1,j,k+1) + z_arr(i,j+1,k+1) + z_arr(i+1,j+1,k+1));
+                                       +z_arr(i,j,k+1) + z_arr(i+1,j,k+1) + z_arr(i,j+1,k+1) + z_arr(i+1,j+1,k+1));
                   dz   = z_hi - z_lo;
 
                   // Establish known constant
+                  qt_lo = qt_arr(i,j,k-1);
                   qv_lo = con_arr(i,j,k-1,RhoQ1_comp)    / con_arr(i,j,k-1,Rho_comp);
                   Th_lo = con_arr(i,j,k-1,RhoTheta_comp) / con_arr(i,j,k-1,Rho_comp);
                   R_lo  = getRhogivenThetaPress(Th_lo, P_lo, R_d/Cp_d, qv_lo);
-                  rho_tot_lo = R_lo * (one + qv_lo);
+                  rho_tot_lo = R_lo * (one + qt_lo);
                   C  = -P_lo + myhalf*rho_tot_lo*grav*dz;
 
                   // Initial guess and residual
+                  qt_hi = qt_arr(i,j,k);
                   qv_hi = con_arr(i,j,k,RhoQ1_comp)    / con_arr(i,j,k,Rho_comp);
                   Th_hi = con_arr(i,j,k,RhoTheta_comp) / con_arr(i,j,k,Rho_comp);
                   R_hi  = getRhogivenThetaPress(Th_hi, P_hi, R_d/Cp_d, qv_hi);
-                  rho_tot_hi = R_hi * (one + qv_hi);
+                  rho_tot_hi = R_hi * (one + qt_hi);
                   F = P_hi + myhalf*rho_tot_hi*grav*dz + C;
 
                   // Do iterations
                   HSEutils::Newton_Raphson_hse(tol, R_d/Cp_d, dz,
                                                grav, C, Th_hi,
-                                               qv_hi, qv_hi,
+                                               qt_hi, qv_hi,
                                                P_hi, R_hi, F);
 
                   // Assign data
@@ -1199,7 +1210,7 @@ ERF::init_from_wrfinput (int lev, MultiFab& mf_PSFC_lev)
             Print() << "start_bdy_time is " << std::setprecision(timeprecision) << start_bdy_time
                     << " from wrfbdy but note that time variable in simulation is elapsed time" << std::endl;
             t_new[lev] = zero;
-            t_old[lev] = -Real(1.e200);
+            t_old[lev] = -bogus_large_value;
         } else {
             t_new[lev] = t_new[0];
             t_old[lev] = t_old[0];
@@ -1460,11 +1471,11 @@ compute_terrain_top_and_bottom (const MultiFab& mf_PH,
     //
     // For the bottom/top boundary (in that order)
     //
-    Gpu::HostVector  <Real> Max_h(3,-Real(1.0e16));
+    Gpu::HostVector  <Real> Max_h(3,-bogus_large_value);
     Gpu::DeviceVector<Real> Max_d(3);
     Gpu::copy(Gpu::hostToDevice, Max_h.begin(), Max_h.end(), Max_d.begin());
 
-    Gpu::HostVector  <Real> Min_h(2, Real(1.0e16));
+    Gpu::HostVector  <Real> Min_h(2, bogus_large_value);
     Gpu::DeviceVector<Real> Min_d(2);
     Gpu::copy(Gpu::hostToDevice, Min_h.begin(), Min_h.end(), Min_d.begin());
 

@@ -147,7 +147,6 @@ wallflux.momentum_model.zhi = "drag"
 #cq_sw = 0.0291
 
 # Enable wall flux diagnostics and set output interval
-erf.use_wall_fluxes = true
 erf.wallflux_diagnostics = true
 erf.wallflux_output_interval = 100
 
@@ -312,4 +311,3 @@ super_droplets_moisture.newton_solver_maxits = 20
 
 # Brownian coalescence (typically small effect, can disable for performance)
 super_droplets_moisture.include_brownian_coalescence = false
-

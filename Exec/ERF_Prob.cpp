@@ -262,7 +262,7 @@ Problem::init_custom_pert_vels (
 }
 
 void
-Problem::update_rhotheta_sources (const Real& time,
+Problem::update_rhotheta_sources (const double& time,
                                   amrex::MultiFab* src,
                                   const Geometry& geom,
                                   std::unique_ptr<MultiFab>& z_phys_cc)
@@ -304,7 +304,7 @@ Problem::update_rhotheta_sources (const Real& time,
 }
 
 void
-Problem::update_rhoqt_sources (const Real& time,
+Problem::update_rhoqt_sources (const double& time,
                                amrex::MultiFab* qsrc,
                                const Geometry& geom,
                                std::unique_ptr<MultiFab>& z_phys_cc)
@@ -347,7 +347,7 @@ Problem::update_rhoqt_sources (const Real& time,
 // USER-DEFINED FUNCTION
 //=============================================================================
 void
-Problem::update_w_subsidence (const Real& time,
+Problem::update_w_subsidence (const double& time,
                               Vector<Real>& wbar,
                               Gpu::DeviceVector<Real>& d_wbar,
                               const amrex::MultiFab& state,
@@ -382,7 +382,7 @@ Problem::update_w_subsidence (const Real& time,
 // USER-DEFINED FUNCTION
 //=============================================================================
 void
-Problem::update_geostrophic_profile (const Real& /*time*/,
+Problem::update_geostrophic_profile (const double& /*time*/,
                                      Vector<Real>& u_geos,
                                      Gpu::DeviceVector<Real>& d_u_geos,
                                      Vector<Real>& v_geos,

@@ -104,9 +104,10 @@ void ERF::MakeNewLevelFromScratch (int lev, Real time, const BoxArray& ba_in,
     lsm_flux[lev].resize(lsm_flux_size);
     lsm_flux_name.resize(lsm_flux_size);
     lsm.Define(lev, solverChoice);
-    if (solverChoice.lsm_type != LandSurfaceType::None)
-    {
-        lsm.Init(lev, vars_new[lev][Vars::cons], Geom(lev), zero); // dummy dt value
+    if (solverChoice.lsm_type != LandSurfaceType::None) {
+        IntVect RefRatio = (lev>0) ? refRatio(lev-1) : IntVect(1);
+        lsm.Init(lev, vars_new[lev][Vars::cons], Geom(lev), Geom(0),
+                 domain_bcs_type, RefRatio, zero, nc_init_file); // dummy dt value
     }
     for (int mvar(0); mvar<lsm_data[lev].size(); ++mvar) {
         lsm_data[lev][mvar] = lsm.Get_Data_Ptr(lev,mvar);
@@ -116,8 +117,10 @@ void ERF::MakeNewLevelFromScratch (int lev, Real time, const BoxArray& ba_in,
         lsm_flux[lev][mvar] = lsm.Get_Flux_Ptr(lev,mvar);
         lsm_flux_name[mvar] = lsm.Get_FluxName(mvar);
     }
-
-
+    if (lev>0) {
+        lsm.Set_Lev0_Data_Ptr(lev);
+        lsm.Set_Lev0_Flux_Ptr(lev);
+    }
 
     // ********************************************************************************************
     // Build the data structures for calculating diffusive/turbulent terms
@@ -181,8 +184,9 @@ void ERF::MakeNewLevelFromScratch (int lev, Real time, const BoxArray& ba_in,
 
             // this will interpolate the input profiles to the nominal height levels
             // (ranging from 0 to the domain top)
+            bool is_moist = (solverChoice.moisture_type != MoistureType::None);
             for (int n = 0; n < input_sounding_data.n_sounding_files; n++) {
-                input_sounding_data.read_from_file(geom[lev], zlevels_stag[lev], n);
+                input_sounding_data.read_from_file(geom[lev], zlevels_stag[lev], n, is_moist);
             }
 
             // this will calculate the hydrostatically balanced density and pressure
@@ -473,7 +477,7 @@ ERF::MakeNewLevelFromCoarse (int lev, Real time, const BoxArray& ba,
     // FillPatchers must be constructed above before this call. pp_inc is scratch; zero afterward.
     // ********************************************************************************************
     if (solverChoice.anelastic[lev]) {
-        Real dummy_dt = one;
+        double dummy_dt = 1.0;
         project_initial_velocity(lev, time, dummy_dt);
         pp_inc[lev].setVal(0.0);
     }
@@ -488,9 +492,10 @@ ERF::MakeNewLevelFromCoarse (int lev, Real time, const BoxArray& ba,
     lsm_flux[lev].resize(lsm_flux_size);
     lsm_flux_name.resize(lsm_flux_size);
     lsm.Define(lev, solverChoice);
-    if (solverChoice.lsm_type != LandSurfaceType::None)
-    {
-        lsm.Init(lev, vars_new[lev][Vars::cons], Geom(lev), zero); // dummy dt value
+    if (solverChoice.lsm_type != LandSurfaceType::None) {
+        IntVect RefRatio = (lev>0) ? refRatio(lev-1) : IntVect(1);
+        lsm.Init(lev, vars_new[lev][Vars::cons], Geom(lev), Geom(0),
+                 domain_bcs_type, RefRatio, zero, nc_init_file); // dummy dt value
     }
     for (int mvar(0); mvar<lsm_data[lev].size(); ++mvar) {
         lsm_data[lev][mvar] = lsm.Get_Data_Ptr(lev,mvar);
@@ -499,6 +504,10 @@ ERF::MakeNewLevelFromCoarse (int lev, Real time, const BoxArray& ba,
     for (int mvar(0); mvar<lsm_flux[lev].size(); ++mvar) {
         lsm_flux[lev][mvar] = lsm.Get_Flux_Ptr(lev,mvar);
         lsm_flux_name[mvar] = lsm.Get_FluxName(mvar);
+    }
+    if (lev>0) {
+        lsm.Set_Lev0_Data_Ptr(lev);
+        lsm.Set_Lev0_Flux_Ptr(lev);
     }
 
     // ********************************************************************************************

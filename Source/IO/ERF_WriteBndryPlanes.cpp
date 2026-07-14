@@ -121,7 +121,7 @@ WriteBndryPlanes::WriteBndryPlanes (Vector<BoxArray>& grids,
  * @param time Current time
  * @param vars_new Grid data for all variables across the AMR hierarchy
  */
-void WriteBndryPlanes::write_planes (const int t_step, const Real time,
+void WriteBndryPlanes::write_planes (const int t_step, const double time_d,
                                      Vector<Vector<MultiFab>>& vars_new,
                                      Vector<MultiFab>& base_state,
                                      bool is_moist, bool is_anelastic)
@@ -136,7 +136,7 @@ void WriteBndryPlanes::write_planes (const int t_step, const Real time,
     const std::string chkname =
         m_filename + Concatenate("/bndry_output", t_step);
 
-    //Print() << "Writing boundary planes at time " << time << std::endl;
+    //Print() << "Writing boundary planes at time " << time_d << std::endl;
 
     const std::string level_prefix = "Level_";
     PreBuildDirectorHierarchy(chkname, level_prefix, 1, true);
@@ -192,6 +192,7 @@ void WriteBndryPlanes::write_planes (const int t_step, const Real time,
                 for (MFIter mfi(Temp, TilingIfNotGPU()); mfi.isValid(); ++mfi)
                 {
                     const Box& bx = mfi.tilebox();
+                    const Real time = static_cast<Real>(time_d);
                     if (is_moist) {
                         // NOTE: we send in S[mfi] where we should send in (*z_phys_cc[lev])[mfi] because we know this routine doesn't use it
                         derived::erf_dermoisttemp(bx, Temp[mfi], 0, 1, S[mfi], S[mfi], m_geom[bndry_lev], time, nullptr, bndry_lev);
@@ -273,7 +274,7 @@ void WriteBndryPlanes::write_planes (const int t_step, const Real time,
     // Writing time.dat
     if (ParallelDescriptor::IOProcessor()) {
         std::ofstream oftime(m_time_file, std::ios::out | std::ios::app);
-        oftime << std::setprecision(17) << t_step << ' ' << time << '\n';
+        oftime << std::setprecision(17) << t_step << ' ' << time_d << '\n';
         oftime.close();
     }
 }

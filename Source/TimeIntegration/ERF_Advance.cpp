@@ -62,12 +62,20 @@ ERF::Advance (int lev, double time, double dt_lev, int iteration, int /*ncycle*/
         c_vfrac = &((get_eb(lev).get_const_factory())->getVolFrac());
     }
 
+    U_old.OverrideSync(Geom(lev).periodicity());
+    V_old.OverrideSync(Geom(lev).periodicity());
+    W_old.OverrideSync(Geom(lev).periodicity());
+
     VelocityToMomentum(U_old, rU_old[lev].nGrowVect(),
                        V_old, rV_old[lev].nGrowVect(),
                        W_old, rW_old[lev].nGrowVect(),
                        S_old, rU_old[lev], rV_old[lev], rW_old[lev],
                        Geom(lev).Domain(),
                        domain_bcs_type, c_vfrac);
+
+    rU_old[lev].OverrideSync(Geom(lev).periodicity());
+    rV_old[lev].OverrideSync(Geom(lev).periodicity());
+    rW_old[lev].OverrideSync(Geom(lev).periodicity());
 
     // Update the inflow perturbation update time and amplitude
     if (solverChoice.use_perturbation(lev))

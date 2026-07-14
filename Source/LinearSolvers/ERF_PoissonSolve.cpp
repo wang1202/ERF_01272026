@@ -814,6 +814,13 @@ void ERF::project_momenta (int lev, double l_time, double l_dt_d, Vector<MultiFa
                              domain_bcs_type);
     }
 
+    // Face-centered MultiFabs have duplicated valid values at internal grid
+    // boundaries. The scalar advection divergence must see one value per face
+    // for the fluxes to telescope across boxes.
+    mom_mf[IntVars::xmom].OverrideSync(geom[lev].periodicity());
+    mom_mf[IntVars::ymom].OverrideSync(geom[lev].periodicity());
+    mom_mf[IntVars::zmom].OverrideSync(geom[lev].periodicity());
+
     // ****************************************************************************
     // Update pressure variable with phi -- note that phi is dt * change in pressure
     // ****************************************************************************

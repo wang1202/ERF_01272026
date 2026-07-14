@@ -143,7 +143,12 @@ option(ERF_ENABLE_ML_UPHYS_DIAGNOSTICS "Enable ML UPHYS diagnostics in SDM" OFF)
 if(ERF_ENABLE_ML_UPHYS_DIAGNOSTICS AND NOT ERF_ENABLE_PARTICLES)
   message(FATAL_ERROR "ERF_ENABLE_ML_UPHYS_DIAGNOSTICS requires particles be enabled")
 endif()
-option(ERF_ENABLE_SHOC "Enable SHOC" OFF)
+option(ERF_ENABLE_EAMXX_SHOC "Build EAMxx SHOC parameterization" OFF)
+option(ERF_ENABLE_SHOC "Deprecated alias for ERF_ENABLE_EAMXX_SHOC" OFF)
+if(ERF_ENABLE_SHOC AND NOT ERF_ENABLE_EAMXX_SHOC)
+  message(WARNING "ERF_ENABLE_SHOC is deprecated; use ERF_ENABLE_EAMXX_SHOC=ON")
+  set(ERF_ENABLE_EAMXX_SHOC ON CACHE BOOL "Build EAMxx SHOC parameterization" FORCE)
+endif()
 
 #Options for performance
 option(ERF_ENABLE_MPI "Enable MPI" OFF)
@@ -326,7 +331,7 @@ list(POP_BACK CMAKE_MESSAGE_CONTEXT)
 
 ########################## EKAT ##################################
 
-if(ERF_ENABLE_RRTMGP OR ERF_ENABLE_SHOC OR ERF_ENABLE_P3)
+if(ERF_ENABLE_RRTMGP OR ERF_ENABLE_EAMXX_SHOC OR ERF_ENABLE_P3)
   set(ERF_ENABLE_EKAT ON)
 else()
   set(ERF_ENABLE_EKAT OFF)
@@ -563,6 +568,10 @@ if(ERF_ENABLE_NOAHMP)
      message(VERBOSE "Noah-MP source: ${NOAHMP_HOME}")
      message(VERBOSE "Noah-MP binary: ${NOAHMP_BIN}")
      add_subdirectory(${NOAHMP_HOME} ${NOAHMP_BIN})
+
+     if(ERF_PRECISION STREQUAL "DOUBLE")
+        target_compile_definitions(noahmp PUBLIC DOUBLE_PREC)
+     endif()
   else()
      message(FATAL_ERROR "Noah-MP requires NetCDF be enabled")
   endif()
@@ -610,7 +619,7 @@ endif()
 
 ########################### SHOC #################################
 
-if(ERF_ENABLE_SHOC)
+if(ERF_ENABLE_EAMXX_SHOC)
   list(APPEND CMAKE_MESSAGE_CONTEXT "SHOC")
 
   message(STATUS "Configuring SHOC")
@@ -623,7 +632,7 @@ if(ERF_ENABLE_SHOC)
   message(VERBOSE "SHOC source files will be compiled directly")
 
   # E3SM Cloned Check
-  if(ERF_ENABLE_SHOC OR ERF_ENABLE_P3)
+  if(ERF_ENABLE_EAMXX_SHOC OR ERF_ENABLE_P3)
     message(VERBOSE "Checking EAMxx files from E3SM")
 
     set(E3SM_EXPECTED_PATH "${PROJECT_SOURCE_DIR}/external/E3SM")
@@ -641,7 +650,7 @@ if(ERF_ENABLE_SHOC)
             "  ln -s /path/to/your/E3SM ${PROJECT_SOURCE_DIR}/external/E3SM\n"
             "\n"
             "Or disable features:\n"
-            "  cmake -DERF_ENABLE_SHOC=OFF -DERF_ENABLE_P3=OFF ..\n")
+            "  cmake -DERF_ENABLE_EAMXX_SHOC=OFF -DERF_ENABLE_P3=OFF ..\n")
     endif()
   else()
     message(DEBUG "EKAT physics not enabled, skipping E3SM check")

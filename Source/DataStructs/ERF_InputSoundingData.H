@@ -76,7 +76,7 @@ public:
 
     void read_from_file (const amrex::Geometry &geom,
                          const amrex::Vector<amrex::Real>& zlevels_stag,
-                         int itime)
+                         int itime, bool is_moist)
     {
         const int klo = 0;
         const int khi = geom.Domain().bigEnd()[AMREX_SPACEDIM-1];
@@ -126,6 +126,10 @@ public:
             while(std::getline(input_sounding_reader, line)) {
                 std::istringstream iss_z(line);
                 iss_z >> z >> theta >> qv >> U >> V;
+
+                // Dont read in non-zero qv if not using a moisture model
+                AMREX_ALWAYS_ASSERT(qv == zero || is_moist);
+
                 if (z == zbot) {
                     AMREX_ALWAYS_ASSERT(theta == theta_inp_sound_tmp[0]);
                     AMREX_ALWAYS_ASSERT(qv*amrex::Real(0.001) == qv_inp_sound_tmp[0]); // convert from g/kg to kg/kg
@@ -134,6 +138,7 @@ public:
                 } else {
                     AMREX_ALWAYS_ASSERT(z > z_inp_sound_tmp[z_inp_sound_tmp.size()-1]); // sounding is increasing in height
                     z_inp_sound_tmp.push_back(z);
+
                     theta_inp_sound_tmp.push_back(theta);
                     qv_inp_sound_tmp.push_back(qv*amrex::Real(0.001)); // convert from g/kg to kg/kg
                     U_inp_sound_tmp.push_back(U);
@@ -214,6 +219,7 @@ public:
 
          // integrate from surface to domain top
         amrex::Real dz, F, C;
+        amrex::Real T_hi;
         amrex::Real rho_tot_hi, rho_tot_lo;
         for (int k=1; k < size(itime); ++k)
         {
@@ -226,6 +232,7 @@ public:
 
             // Initial guess and residual
             pm_integ[k]   = pm_integ[k-1];
+            T_hi          = getTgivenPandTh(pm_integ[k], theta_inp_sound[itime][k], R_d/Cp_d);
             rhod_integ[k] = getRhogivenThetaPress(theta_inp_sound[itime][k],
                                                   pm_integ[k],
                                                   R_d/Cp_d,
@@ -234,10 +241,14 @@ public:
             F = pm_integ[k] + myhalf*rho_tot_hi*CONST_GRAV*dz + C;
 
             // Do iterations
-            if (std::abs(F)>tol) HSEutils::Newton_Raphson_hse(tol, R_d/Cp_d, dz,
-                                                              CONST_GRAV, C, theta_inp_sound[itime][k],
-                                                              qv_inp_sound[itime][k], qv_inp_sound[itime][k],
-                                                              pm_integ[k], rhod_integ[k], F);
+            if (std::abs(F)>tol) {
+                bool maintain_Th = true;
+                HSEutils::Newton_Raphson_hse(tol, R_d/Cp_d, dz,
+                                             CONST_GRAV, C, theta_inp_sound[itime][k], T_hi,
+                                             qv_inp_sound[itime][k], qv_inp_sound[itime][k],
+                                             pm_integ[k], rhod_integ[k], F, maintain_Th);
+            }
+
 #if 0       // Printing
             amrex::Print() << z_inp_sound[itime][k]
                            << " " << pm_integ[k]
@@ -267,7 +278,7 @@ public:
         rhod_integ.resize(Ninp);
 
         // evaluate surface quantities (k=0): total pressure and dry air
-        pm_integ[0] = press_ref_inp_sound;
+        pm_integ[0]   = press_ref_inp_sound;
         rhod_integ[0] = getRhogivenThetaPress(theta_ref_inp_sound,
                                               press_ref_inp_sound,
                                               R_d/Cp_d,

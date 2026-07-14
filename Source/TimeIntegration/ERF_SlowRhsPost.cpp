@@ -2,6 +2,7 @@
 #include <AMReX_ParReduce.H>
 #include <ERF_SrcHeaders.H>
 #include <ERF_TI_slow_headers.H>
+#include <ERF_ShocDriver.H>
 #include <ERF_EBAdvection.H>
 #include <ERF_EBRedistribute.H>
 
@@ -47,7 +48,7 @@ using namespace amrex;
 
 void erf_slow_rhs_post (int level, int finest_level,
                         int nrk,
-                        Real dt,
+                        double dt_d,
                         int n_qstate,
                         Vector<MultiFab>& S_rhs,
                         Vector<MultiFab>& S_old,
@@ -82,26 +83,17 @@ void erf_slow_rhs_post (int level, int finest_level,
                         Gpu::DeviceVector<Real>& stretched_dz_d,
                         Vector<std::unique_ptr<MultiFab>>& mapfac,
                         amrex::EBFArrayBoxFactory const& ebfact,
-#if defined(ERF_USE_NETCDF)
-                        const bool& moist_set_rhs_bool,
-                        const Real& old_stage_time_total,
-                        const Real& start_bdy_time,
-                        const Real& final_bdy_time,
-                        const Real& bdy_time_interval,
-                        int  width,
-                        Vector<Vector<FArrayBox>>& bdy_data_xlo,
-                        Vector<Vector<FArrayBox>>& bdy_data_xhi,
-                        Vector<Vector<FArrayBox>>& bdy_data_ylo,
-                        Vector<Vector<FArrayBox>>& bdy_data_yhi,
+#ifdef ERF_USE_EAMXX_SHOC
+                        SHOCInterface* eamxx_shoc_lev,
 #endif
-#ifdef ERF_USE_SHOC
-                        std::unique_ptr<SHOCInterface>& shoc_lev,
-#endif
+                        ShocDriver* native_shoc_lev,
                         YAFluxRegister* fr_as_crse,
                         YAFluxRegister* fr_as_fine,
                         std::unique_ptr<ReadBndryPlanes>& m_r2d)
 {
     BL_PROFILE_REGION("erf_slow_rhs_post()");
+
+    Real dt = static_cast<Real>(dt_d);
 
     const BCRec* bc_ptr_d = domain_bcs_type_d.data();
     const BCRec* bc_ptr_h = domain_bcs_type_h.data();
@@ -128,19 +120,25 @@ void erf_slow_rhs_post (int level, int finest_level,
                                    (tc.les_type        !=       LESType::None) ||
                                    (tc.rans_type       !=      RANSType::None) ||
                                    (tc.pbl_type        !=       PBLType::None) );
-    const bool l_use_turb       = ( tc.les_type  == LESType::Smagorinsky ||
-                                    tc.les_type  == LESType::Deardorff   ||
-                                    tc.rans_type == RANSType::kEqn       ||
-                                    tc.pbl_type  == PBLType::MYJ         ||
-                                    tc.pbl_type  == PBLType::MYNN25      ||
-                                    tc.pbl_type  == PBLType::MYNNEDMF    ||
-                                    tc.pbl_type  == PBLType::YSU ||
-                                    tc.pbl_type  == PBLType::MRF );
+    const bool l_use_turb       = tc.use_kturb;
     const bool l_rotate         = (solverChoice.use_rotate_surface_flux);
     const bool l_do_scalar      = (solverChoice.transport_scalar);
     amrex::ignore_unused(m_r2d);
 
     const Box& domain = geom.Domain();
+
+    bool l_apply_surface_layer_fluxes_in_diffusion = (SurfLayer != nullptr);
+#ifdef ERF_USE_EAMXX_SHOC
+    if (tc.uses_eamxx_shoc()) {
+        l_apply_surface_layer_fluxes_in_diffusion = false;
+    }
+#endif
+    if (tc.uses_native_shoc()) {
+        AMREX_ALWAYS_ASSERT(native_shoc_lev != nullptr);
+        l_apply_surface_layer_fluxes_in_diffusion =
+            l_apply_surface_layer_fluxes_in_diffusion &&
+            native_shoc_lev->uses_host_diffusion();
+    }
 
     const GpuArray<Real, AMREX_SPACEDIM> dxInv = geom.InvCellSizeArray();
     const Real* dx = geom.CellSize();
@@ -272,8 +270,6 @@ void erf_slow_rhs_post (int level, int finest_level,
         const Array4<const Real> & u = xvel.array(mfi);
         const Array4<const Real> & v = yvel.array(mfi);
 
-        const Array4<Real const>& mu_turb = l_use_turb ? eddyDiffs->const_array(mfi) : Array4<const Real>{};
-
         const Array4<const Real>& z_nd         = z_phys_nd->const_array(mfi);
         const Array4<const Real>& z_cc         = z_phys_cc->const_array(mfi);
         const Array4<const Real>& detJ_new_arr = l_moving_terrain ? detJ_new->const_array(mfi)    : Array4<const Real>{};
@@ -367,7 +363,6 @@ void erf_slow_rhs_post (int level, int finest_level,
         Array4<Real> diffflux_x, diffflux_y, diffflux_z;
         Array4<Real> hfx_x, hfx_y, hfx_z, diss;
         Array4<Real> q1fx_x, q1fx_y, q1fx_z, q2fx_z;
-        const bool use_SurfLayer = (SurfLayer != nullptr);
 
         if (l_use_diff) {
             diffflux_x = dflux_x->array(mfi);
@@ -384,6 +379,14 @@ void erf_slow_rhs_post (int level, int finest_level,
             if (Q1fx3) q1fx_z = Q1fx3->array(mfi);
             if (Q2fx3) q2fx_z = Q2fx3->array(mfi);
         }
+
+        if (l_use_diff && l_use_turb) {
+            AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+                eddyDiffs != nullptr,
+                "erf_slow_rhs_post: active turbulence requires non-null eddyDiffs");
+        }
+        const Array4<const Real>& mu_turb =
+            l_use_turb ? eddyDiffs->const_array(mfi) : Array4<const Real>{};
 
         //
         // Note that we either advect and diffuse all or none of the moisture variables
@@ -459,8 +462,11 @@ void erf_slow_rhs_post (int level, int finest_level,
                 if (l_use_diff)
                 {
                     // Allow for implicit moisture diffusion
-                    const Real l_vert_implicit_fac = (solverChoice.implicit_moisture_diffusion) ?
-                                                     solverChoice.vert_implicit_fac[nrk] : zero;
+                    Real l_vert_implicit_fac = zero;
+                    if ( (ivar == RhoKE_comp && solverChoice.implicit_ke_diffusion      ) ||
+                         (ivar == RhoQ1_comp && solverChoice.implicit_moisture_diffusion) ) {
+                        l_vert_implicit_fac = solverChoice.vert_implicit_fac[level][nrk];
+                    }
 
                     const Array4<const Real> tm_arr = t_mean_mf ? t_mean_mf->const_array(mfi) : Array4<const Real>{};
 
@@ -473,7 +479,7 @@ void erf_slow_rhs_post (int level, int finest_level,
                                                mf_my, mf_uy, mf_vy,
                                                hfx_z, q1fx_z, q2fx_z, diss,
                                                mu_turb, solverChoice, level,
-                                               tm_arr, grav_gpu, bc_ptr_d, use_SurfLayer, l_vert_implicit_fac);
+                                               tm_arr, grav_gpu, bc_ptr_d, l_apply_surface_layer_fluxes_in_diffusion, l_vert_implicit_fac);
                     } else if (l_use_terrain) {
                         DiffusionSrcForState_T(tbx, domain, start_comp, num_comp, l_rotate, u, v,
                                                new_cons, cur_prim, cell_rhs,
@@ -484,7 +490,7 @@ void erf_slow_rhs_post (int level, int finest_level,
                                                mf_my, mf_uy, mf_vy,
                                                hfx_x, hfx_y, hfx_z, q1fx_x, q1fx_y, q1fx_z,q2fx_z, diss,
                                                mu_turb, solverChoice, level,
-                                               tm_arr, grav_gpu, bc_ptr_d, use_SurfLayer, l_vert_implicit_fac);
+                                               tm_arr, grav_gpu, bc_ptr_d, l_apply_surface_layer_fluxes_in_diffusion, l_vert_implicit_fac);
                     } else {
                         DiffusionSrcForState_N(tbx, domain, start_comp, num_comp, u, v,
                                                new_cons, cur_prim, cell_rhs,
@@ -493,36 +499,18 @@ void erf_slow_rhs_post (int level, int finest_level,
                                                mf_my, mf_uy, mf_vy,
                                                hfx_x, hfx_y, hfx_z, q1fx_x, q1fx_y, q1fx_z, q2fx_z, diss,
                                                mu_turb, solverChoice, level,
-                                               tm_arr, grav_gpu, bc_ptr_d, use_SurfLayer, solverChoice.use_wall_fluxes, l_vert_implicit_fac);
+                                               tm_arr, grav_gpu, bc_ptr_d, l_apply_surface_layer_fluxes_in_diffusion,
+                                               solverChoice.use_wall_fluxes, l_vert_implicit_fac);
                     }
                 } // use_diff
             } // valid slow var
         } // loop ivar
 
-#if defined(ERF_USE_NETCDF)
-        if (moist_set_rhs_bool)
-        {
-            Real bdy_factor = solverChoice.bdy_nudge_factor;
-            const Array4<const Real> & new_cons_const = S_new[IntVars::cons].const_array(mfi);
-            //
-            // Note that old_stage_time_total = start_time+old_stage_time is total time
-            //           start_bdy_time and final_bdy_time are total time
-            //
-            moist_set_rhs(geom, tbx, new_cons_const, cell_rhs,
-                          old_stage_time_total, dt, start_bdy_time, final_bdy_time, bdy_time_interval,
-                          bdy_factor, width, domain,
-                          bdy_data_xlo, bdy_data_xhi,
-                          bdy_data_ylo, bdy_data_yhi,
-                          m_r2d);
+#ifdef ERF_USE_EAMXX_SHOC
+        if (tc.uses_eamxx_shoc() && eamxx_shoc_lev) {
+            eamxx_shoc_lev->add_slow_tend(mfi,tbx,cell_rhs);
         }
 #endif
-
-#ifdef ERF_USE_SHOC
-        if (solverChoice.use_shoc) {
-            shoc_lev->add_slow_tend(mfi,tbx,cell_rhs);
-        }
-#endif
-
         // This updates just the "slow" conserved variables
         {
         BL_PROFILE("rhs_post_8");

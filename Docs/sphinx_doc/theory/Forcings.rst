@@ -124,8 +124,22 @@ Currently the target condition to which the sponge zones should be forced toward
 
    \frac{dQ}{dt} = \mathrm{RHS} - A\xi^n(Q-Q_\mathrm{target})
 
-where RHS are the other right-hand side terms. The parameters to be set by the user are -- `A` is the sponge amplitude, `n` is the sponge strength and the :math:`Q_\mathrm{target}` -- the target solution in the sponge. :math:`\xi` is a linear coordinate that is 0 at the beginning of the sponge and 1 at the end. An example of the sponge inputs can be found in ``Exec/RegTests/Terrain2d_Cylinder`` and is given below. This list of inputs specifies sponge zones in the inlet and outlet of the domain in the x-direction and the outlet of the domain in the z-direction. The `start` and `end` parameters specify the starting and ending of the sponge zones. At the inlet, the sponge starts at :math:`x=0` and at the outlet the sponge ends at :math:`x=L` -- the end of the domain. The sponge amplitude `A` has to be adjust
-ed in a problem-specific manner. In addition to the density and the :math:`x, y, z` velocities, ERF can now also relax :math:`\rho \theta` and :math:`\rho q_v` in the sponge zones. These are controlled with ``erf.sponge_rhotheta`` and ``erf.sponge_rhomoist``, respectively. If either scalar target is omitted or set to a negative value, ERF falls back to the local base-state target, i.e. :math:`\rho_0 \theta_0` for ``erf.sponge_rhotheta`` and :math:`\rho_0 q_{v,0}` for ``erf.sponge_rhomoist``.
+where RHS are the other right-hand side terms. The parameters to be set by the user are -- `A` is the sponge amplitude,
+`n` is the sponge strength and the :math:`Q_\mathrm{target}` -- the target solution in the sponge.
+:math:`\xi` is a linear coordinate that is 0 at the beginning of the sponge and 1 at the end.
+An example of the sponge inputs can be found in ``Exec/RegTests/Terrain2d_Cylinder`` and is given below.
+This list of inputs specifies sponge zones in the inlet and outlet of the domain in the x-direction
+and the outlet of the domain in the z-direction. The `start` and `end` parameters specify the starting
+and ending of the sponge zones. At the inlet, the sponge starts at :math:`x=0` and at the outlet
+the sponge ends at :math:`x=L` -- the end of the domain. The sponge amplitude `A` has to be adjusted in a
+problem-specific manner.
+In addition to the density and the :math:`x, y, z` velocities, ERF can now also
+relax :math:`\rho \theta` and :math:`\rho q_v` in the sponge zones.
+These are controlled with ``erf.sponge_rhotheta`` and ``erf.sponge_rhomoist``, respectively.
+If either scalar target is omitted or set to a negative value,
+ERF falls back to the local base-state target, i.e. :math:`\rho_0 \theta_0`
+for ``erf.sponge_rhotheta`` and :math:`\rho_0 q_{v,0}` for ``erf.sponge_rhomoist``,
+where :math:`\rho_0` is the dry base-state density.
 
 ::
 
@@ -172,7 +186,7 @@ The goal is to force interior cells to near-zero velocities using the following 
 
 .. math::
 
-    F_{\rho u_i} = -C_{d,m} \beta_r \sqrt[3]{\Delta x \Delta y \Delta z} \rho u_i U
+    F_{\rho u_i} = -C_{d,m} \beta_r \left(\sqrt[3]{\Delta x_1 \Delta x_2 \Delta x_3}\right)^{-1} \rho u_i U
 
 where :math:`C_{d,m}` is a drag coefficient and :math:`U` is the wind speed magnitude.
 The drag coefficient can be specified by the user using ``erf.if_Cd_momentum``, which defaults to a value of 10.
@@ -184,7 +198,7 @@ If the user does specify MOST, then the following formulation is applied to part
 
 .. math::
 
-    F_{\rho u_i} = -C_{d,m} (1 - \beta_r) \sqrt[3]{\Delta x \Delta y \Delta z} \rho |U_s| (u_i - u_{i,target})
+    F_{\rho u_i} = -C_{d,m} (1 - \beta_r) \left(\sqrt[3]{\Delta x_1 \Delta x_2 \Delta x_3}\right)^{-1} \rho |U_s| (u_i - u_{i,target})
 
 where :math:`u_{i,target}` is a value determined through MOST and :math:`|U_s|` is a unit velocity scale.
 This formulation essentially forces the velocity at the wall to a value determined by using MOST, but the strength forcing is inversely related to how immersed the cell is.
@@ -196,7 +210,7 @@ The temperature forcing is then formulated as follows:
 
 .. math::
 
-    F_{\rho\theta} = -C_{d,s} \beta_r \sqrt[3]{\Delta x \Delta y \Delta z} |U_s| (\rho \theta_{target} - \rho\theta)
+    F_{\rho\theta} = -C_{d,s} \beta_r \left(\sqrt[3]{\Delta x_1 \Delta x_2 \Delta x_3}\right)^{-1} |U_s| (\rho \theta_{target} - \rho\theta)
 
 The target temperature :math:`\theta_{target}`` is straightforward when using a surface temperature and heating rate; when specifying a surface flux or Obukhov length, the target temperature is determined using MOST.
 The following inputs are available when representing terrain using immersed forcing:
@@ -227,7 +241,7 @@ The momentum forcing is defined as follows:
 
 .. math::
 
-    F_{\rho u_i} = -C_{d,m} \beta_r V_f \sqrt[3]{\Delta x \Delta y \Delta z} \rho u_i U
+    F_{\rho u_i} = -C_{d,m} \beta_r V_f \left(\sqrt[3]{\Delta x_1 \Delta x_2 \Delta x_3}\right)^{-1} \rho u_i U
 
 Temperature forcing for building walls and roofs can similar be specified following the same formulation as immersed forcing for terrain; however, only the option to specify a surface temperature and heating rate is currently available.
 

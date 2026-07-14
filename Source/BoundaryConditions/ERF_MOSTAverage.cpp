@@ -117,7 +117,7 @@ MOSTAverage::make_MOSTAverage_at_level (const int& lev,
 
         m_fields[lev][0] = vars_old[Vars::xvel];
         m_averages[lev][0] = std::make_unique<MultiFab>(ba2d,dm,ncomp,ng);
-        m_averages[lev][0]->setVal(Real(1e34));
+        m_averages[lev][0]->setVal(bogus_large_value);
         if (m_rotate) {
             m_rot_fields[lev][0] = std::make_unique<MultiFab>(ba,dm,ncomp,ng);
             MultiFab::Copy(*m_rot_fields[lev][0],mf,0,0,1,ng);
@@ -138,7 +138,7 @@ MOSTAverage::make_MOSTAverage_at_level (const int& lev,
 
         m_fields[lev][1] = vars_old[Vars::yvel];
         m_averages[lev][1] = std::make_unique<MultiFab>(ba2d,dm,ncomp,ng);
-        m_averages[lev][1]->setVal(Real(1e34));
+        m_averages[lev][1]->setVal(bogus_large_value);
         if (m_rotate) {
             m_rot_fields[lev][1] = std::make_unique<MultiFab>(ba,dm,ncomp,ng);
             MultiFab::Copy(*m_rot_fields[lev][1],mf,0,0,1,ng);
@@ -166,7 +166,7 @@ MOSTAverage::make_MOSTAverage_at_level (const int& lev,
         // Initialize remaining multifabs
         for (int iavg(2); iavg < m_navg; ++iavg) {
             m_averages[lev][iavg] = std::make_unique<MultiFab>(ba2d,dm,ncomp,ng);
-            m_averages[lev][iavg]->setVal(Real(1e34));
+            m_averages[lev][iavg]->setVal(bogus_large_value);
         }
 
         // Default to dry
@@ -243,7 +243,7 @@ MOSTAverage::make_MOSTAverage_at_level (const int& lev,
     //--------------------------------------------------------
     if (m_t_avg) {
         // Exponential filter function
-        m_fact_old = std::exp(-one / m_time_window);
+        m_fact_old = static_cast<amrex::Real>(std::exp(-1.0 / m_time_window));
 
         // Enforce discrete normalization: (mfn*val_new + mfo*val_old)
         m_fact_new = one - m_fact_old;

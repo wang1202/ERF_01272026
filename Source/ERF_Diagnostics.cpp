@@ -11,9 +11,15 @@ using namespace amrex;
 void
 ERF::compute_max_pressure_gradient_diagnostic(int lev)
 {
+    // We don't require HSE when anelastic because the pressure gradient
+    //    is computed from the Poisson solve
+    if (solverChoice.anelastic[lev]) return;
+
     auto& lev_new = vars_new[lev];
 
     int ng = (solverChoice.terrain_type == TerrainType::EB) ? 3 : 1;
+
+    const Real grav = solverChoice.gravity;
 
     Vector<MultiFab> gradp_temp;  gradp_temp.resize(AMREX_SPACEDIM);
     gradp_temp[0].define(vars_new[lev][Vars::xvel].boxArray(), lev_new[Vars::xvel].DistributionMap(), 1, 0);
@@ -53,13 +59,57 @@ ERF::compute_max_pressure_gradient_diagnostic(int lev)
     zface_domain.growHi(2,-1);
 
     // *******************************************************************************
-    // First compute for base state pressure
+    // First check that base state satisfies EOS
     // *******************************************************************************
 
     Print() << " " << std::endl;
 
-    MultiFab r_hse(base_state[lev], make_alias, BaseState::r0_comp , 1);
-    MultiFab p_hse(base_state[lev], make_alias, BaseState::p0_comp , 1);
+    MultiFab  r_hse(base_state[lev], make_alias, BaseState::r0_comp , 1);
+    MultiFab  p_hse(base_state[lev], make_alias, BaseState::p0_comp , 1);
+    MultiFab qv_hse(base_state[lev], make_alias, BaseState::qv0_comp , 1);
+    MultiFab th_hse(base_state[lev], make_alias, BaseState::th0_comp, 1);
+
+    MultiFab dp(p_hse.boxArray(), p_hse.DistributionMap(), 1, 0);
+
+    // Initialize to zero in case of EB covered cells
+    dp.setVal(0.);
+
+    for (MFIter mfi(dp); mfi.isValid(); ++mfi) {
+        Box bx = mfi.validbox();
+        auto const  rhse_arr  =  r_hse.const_array(mfi);
+        auto const  phse_arr  =  p_hse.const_array(mfi);
+        auto const qvhse_arr  = qv_hse.const_array(mfi);
+        auto const thhse_arr  = th_hse.const_array(mfi);
+        auto       dpeos_arr  = dp.array(mfi);
+
+        if (solverChoice.terrain_type != TerrainType::EB) {
+            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                Real rhotheta = rhse_arr(i,j,k) * thhse_arr(i,j,k);
+                dpeos_arr(i,j,k) = std::abs(getPgivenRTh(rhotheta, qvhse_arr(i,j,k)) - phse_arr(i,j,k));
+            });
+        } else {
+            Array4<const Real> volfrac = (get_eb(lev).get_const_factory())->getVolFrac().const_array(mfi);
+            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                if (volfrac(i,j,k) > zero) {
+                    Real rhotheta = rhse_arr(i,j,k) * thhse_arr(i,j,k);
+                    dpeos_arr(i,j,k) = std::abs(getPgivenRTh(rhotheta, qvhse_arr(i,j,k)) - phse_arr(i,j,k));
+                }
+            });
+        }
+    }
+    Real max_diff = dp.max(0);
+    if (max_diff > 1.e-8) {
+        IntVect max_loc = dp.maxIndex(0);
+        Print() << "Max value of |p_hse - p_eos| is " << max_diff << std::endl;
+        Print() << " with max in cell " << max_loc << std::endl;
+        Abort("Base state violates EOS ");
+    } else {
+        Print() << "Max value of |p_hse - p_eos| is less than 1e-8" << std::endl;
+    }
+
+    // *******************************************************************************
+    // Now compute pressure gradients for base state pressure
+    // *******************************************************************************
 
     compute_gradp(p_hse, geom[lev], *z_phys_nd[lev].get(), *z_phys_cc[lev].get(), mapfac[lev],
                   get_eb(lev), gradp_temp, solverChoice);
@@ -67,51 +117,83 @@ ERF::compute_max_pressure_gradient_diagnostic(int lev)
     Real min_gpx = gradp_temp[0].min(xface_domain,comp);
     Real max_gpx = gradp_temp[0].max(xface_domain,comp);
     if (max_gpx != zero || min_gpx != zero) {
-        Print() << "Min/Max value of x-gradient of base state pressure are " << min_gpx << " " << max_gpx;
+        Print() << "Min/max value of dp0/dx            are " << min_gpx << " " << max_gpx << std::endl;
         IntVect min_loc = gradp_temp[0].minIndex(comp);
         IntVect max_loc = gradp_temp[0].maxIndex(comp);
         if (min_loc[0] != ilo && min_loc[0] != ihi) amrex::Print() << " with min at face " << min_loc;
         if (max_loc[0] != ilo && max_loc[0] != ihi) amrex::Print() << " with max at face " << max_loc;
         Print() << std::endl;
     } else {
-        Print() << "Min/max value of x-gradient of base state pressure are zero " << std::endl;
+        Print() << "Min/max value of dp0/dx            are zero " << std::endl;
     }
 
     Real min_gpy = gradp_temp[1].min(yface_domain,comp);
     Real max_gpy = gradp_temp[1].max(yface_domain,comp);
     if (max_gpy != zero || min_gpy != zero) {
-        Print() << "Min/max value of y-gradient of base state pressure are " << min_gpy << " " << max_gpy;
+        Print() << "Min/max value of dp0/dy            are " << min_gpy << " " << max_gpy << std::endl;
         IntVect min_loc = gradp_temp[1].minIndex(comp);
         IntVect max_loc = gradp_temp[1].maxIndex(comp);
         if (min_loc[1] != jlo && min_loc[1] != jhi) amrex::Print() << " with min at face " << min_loc;
         if (max_loc[1] != jlo && max_loc[1] != jhi) amrex::Print() << " with max at face " << max_loc;
         Print() << std::endl;
     } else {
-        Print() << "Min/max value of y-gradient of base state pressure are zero " << std::endl;
+        Print() << "Min/max value of dp0/dy            are zero " << std::endl;
     }
 
-    const Real grav = solverChoice.gravity;
-    for (MFIter mfi(gradp_temp[2]); mfi.isValid(); ++mfi) {
-        Box bx = mfi.validbox(); bx.growHi(2,-1);
-        if (bx.smallEnd(2) == 0) bx.growLo(2,-1);
-        auto        gpz_arr  = gradp_temp[2].array(mfi);
-        auto const rhse_arr  = r_hse.const_array(mfi);
-        ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-            gpz_arr(i,j,k) += grav * myhalf * (rhse_arr(i,j,k) + rhse_arr(i,j,k-1));
-        });
+    if (solverChoice.terrain_type != TerrainType::EB) {
+        for (MFIter mfi(gradp_temp[2]); mfi.isValid(); ++mfi) {
+            Box bx = mfi.validbox(); bx.growHi(2,-1);
+            if (bx.smallEnd(2) == 0) bx.growLo(2,-1);
+            auto        gpz_arr  = gradp_temp[2].array(mfi);
+            auto const  rhse_arr  =  r_hse.const_array(mfi);
+            auto const qvhse_arr  = qv_hse.const_array(mfi);
+            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                gpz_arr(i,j,k) += grav * myhalf * ( rhse_arr(i,j,k  ) * (one + qvhse_arr(i,j,k  ))
+                                                   +rhse_arr(i,j,k-1) * (one + qvhse_arr(i,j,k-1)) );
+            });
+        }
+    // EB case: check HSE only for uncovered cells
+    } else {
+        for (MFIter mfi(gradp_temp[2]); mfi.isValid(); ++mfi) {
+            Box bx = mfi.validbox(); bx.growHi(2,-1);
+            if (bx.smallEnd(2) == 0) bx.growLo(2,-1);
+            auto        gpz_arr  = gradp_temp[2].array(mfi);
+            auto const  rhse_arr  =  r_hse.const_array(mfi);
+            auto const qvhse_arr  = qv_hse.const_array(mfi);
+            Array4<const Real> w_volfrac = (get_eb(lev).get_w_const_factory())->getVolFrac().const_array(mfi);
+
+            ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                if (w_volfrac(i,j,k) > zero) {
+                    gpz_arr(i,j,k) += grav * myhalf * ( rhse_arr(i,j,k  ) * (one + qvhse_arr(i,j,k  ))
+                                                       +rhse_arr(i,j,k-1) * (one + qvhse_arr(i,j,k-1)) );
+                }
+            });
+        }
     }
+
+    Real tol;
+#ifdef AMREX_USE_FLOAT
+    tol = Real(1.e-4);
+#else
+    if (solverChoice.terrain_type == TerrainType::EB) {
+        tol = 1.e-4;
+    } else {
+        tol = 1.e-8;
+    }
+#endif
 
     Real min_gpz = gradp_temp[2].min(zface_domain,comp);
     Real max_gpz = gradp_temp[2].max(zface_domain,comp);
-    if (max_gpz != zero || min_gpz != zero) {
+
+    if (std::abs(max_gpz) > tol || std::abs(min_gpz) > tol) {
         IntVect min_loc = gradp_temp[2].minIndex(comp);
         IntVect max_loc = gradp_temp[2].maxIndex(comp);
-        Print() << "Min/max value of dp0/dz + rho0*|g|                 are " << min_gpz << " " << max_gpz;
+        Print() << "Min/max value of dp0/dz + rho0*|g| are " << min_gpz << " " << max_gpz;
         if (min_loc[2] != klo && min_loc[2] != khi) amrex::Print() << " with min at face " << min_loc;
         if (max_loc[2] != klo && max_loc[2] != khi) amrex::Print() << " with max at face " << max_loc;
-        Print() << std::endl;
+        amrex::Abort("Base state is too far out of HSE");
     } else {
-        Print() << "Min/max value of dp0/dz + rho0*|g|  are zero " << std::endl;
+        Print() << "Min/max value of dp0/dz + rho0*|g| are less than " << tol << std::endl;
     }
     Print() << " " << std::endl;
 
@@ -157,8 +239,8 @@ ERF::compute_max_pressure_gradient_diagnostic(int lev)
                 Print() << "Min/max value of x-gradient of full (moist) pressure are zero " << std::endl;
             }
 
-            Real min_gpy = gradp_temp[1].min(yface_domain,comp);
-            Real max_gpy = gradp_temp[1].max(yface_domain,comp);
+            min_gpy = gradp_temp[1].min(yface_domain,comp);
+            max_gpy = gradp_temp[1].max(yface_domain,comp);
             if (max_gpy != zero || min_gpy != zero) {
                 Print() << "Min/Max value of y-gradient of full (moist) pressure are " << min_gpy << " " << max_gpy;
                 IntVect min_loc = gradp_temp[1].minIndex(comp);
@@ -174,7 +256,6 @@ ERF::compute_max_pressure_gradient_diagnostic(int lev)
             int n_qstate_into_total = micro->Get_Qstate_Moist_Size() - micro->Get_Qstate_Moist_NumConc_Size();
             make_qt(lev_new[Vars::cons], qt, n_qstate_into_total);
 
-            const Real grav = solverChoice.gravity;
             for (MFIter mfi(gradp_temp[2]); mfi.isValid(); ++mfi)
             {
                 Box bx = mfi.validbox(); bx.growHi(2,-1);

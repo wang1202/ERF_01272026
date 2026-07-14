@@ -83,8 +83,8 @@ ERF::FillPatchFineLevel (int lev, double time_d,
     IntVect ngvect_cons = mfs_vel[Vars::cons]->nGrowVect();
     IntVect ngvect_vels = mfs_vel[Vars::xvel]->nGrowVect();
 
-    Vector<Real> ftime    = {t_old[lev  ], t_new[lev  ]};
-    Vector<Real> ctime    = {t_old[lev-1], t_new[lev-1]};
+    Vector<Real> ftime    = {static_cast<Real>(t_old[lev  ]), static_cast<Real>(t_new[lev  ])};
+    Vector<Real> ctime    = {static_cast<Real>(t_old[lev-1]), static_cast<Real>(t_new[lev-1])};
 
     amrex::Real small_dt = Real(1.e-8) * (ftime[1] - ftime[0]);
 
@@ -185,7 +185,7 @@ ERF::FillPatchFineLevel (int lev, double time_d,
         // Set values in the cells outside the domain boundary so that we can do the Add
         //     without worrying about uninitialized values outside the domain -- these
         //     will be filled in the physbcs call
-        mf_c.setDomainBndry(Real(1.234e20),0,2,geom[lev]); // Do both rho and (rho theta) together
+        mf_c.setDomainBndry(bogus_large_value,0,2,geom[lev]); // Do both rho and (rho theta) together
 
         // Add rho_0 back to rho and theta_0 back to theta
         MultiFab::Add(mf_c, new_base_state,BaseState::r0_comp,Rho_comp,1,ngvect_cons);
@@ -300,7 +300,7 @@ ERF::FillPatchCrseLevel (int lev, double time_d,
     IntVect ngvect_cons = mfs_vel[Vars::cons]->nGrowVect();
     IntVect ngvect_vels = mfs_vel[Vars::xvel]->nGrowVect();
 
-    Vector<Real> ftime    = {t_old[lev], t_new[lev]};
+    Vector<Real> ftime    = {static_cast<Real>(t_old[lev]), static_cast<Real>(t_new[lev])};
 
     //
     // Below we call FillPatchSingleLevel which does NOT fill ghost cells outside the domain

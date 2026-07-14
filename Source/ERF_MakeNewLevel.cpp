@@ -104,9 +104,10 @@ void ERF::MakeNewLevelFromScratch (int lev, Real time, const BoxArray& ba_in,
     lsm_flux[lev].resize(lsm_flux_size);
     lsm_flux_name.resize(lsm_flux_size);
     lsm.Define(lev, solverChoice);
-    if (solverChoice.lsm_type != LandSurfaceType::None)
-    {
-        lsm.Init(lev, vars_new[lev][Vars::cons], Geom(lev), zero); // dummy dt value
+    if (solverChoice.lsm_type != LandSurfaceType::None) {
+        IntVect RefRatio = (lev>0) ? refRatio(lev-1) : IntVect(1);
+        lsm.Init(lev, vars_new[lev][Vars::cons], Geom(lev), Geom(0),
+                 domain_bcs_type, RefRatio, zero, nc_init_file); // dummy dt value
     }
     for (int mvar(0); mvar<lsm_data[lev].size(); ++mvar) {
         lsm_data[lev][mvar] = lsm.Get_Data_Ptr(lev,mvar);
@@ -116,8 +117,10 @@ void ERF::MakeNewLevelFromScratch (int lev, Real time, const BoxArray& ba_in,
         lsm_flux[lev][mvar] = lsm.Get_Flux_Ptr(lev,mvar);
         lsm_flux_name[mvar] = lsm.Get_FluxName(mvar);
     }
-
-
+    if (lev>0) {
+        lsm.Set_Lev0_Data_Ptr(lev);
+        lsm.Set_Lev0_Flux_Ptr(lev);
+    }
 
     // ********************************************************************************************
     // Build the data structures for calculating diffusive/turbulent terms
@@ -181,8 +184,9 @@ void ERF::MakeNewLevelFromScratch (int lev, Real time, const BoxArray& ba_in,
 
             // this will interpolate the input profiles to the nominal height levels
             // (ranging from 0 to the domain top)
+            bool is_moist = (solverChoice.moisture_type != MoistureType::None);
             for (int n = 0; n < input_sounding_data.n_sounding_files; n++) {
-                input_sounding_data.read_from_file(geom[lev], zlevels_stag[lev], n);
+                input_sounding_data.read_from_file(geom[lev], zlevels_stag[lev], n, is_moist);
             }
 
             // this will calculate the hydrostatically balanced density and pressure
@@ -306,7 +310,7 @@ ERF::MakeNewLevelFromCoarse (int lev, Real time, const BoxArray& ba,
     // Note that t_new = time here is elapsed time
     //
     t_new[lev] = time;
-    t_old[lev] = time - Real(1.e200);
+    t_old[lev] = time - bogus_large_value;
 
     // ********************************************************************************************
     // Build the data structures for metric quantities used with terrain-fitted coordinates
@@ -473,7 +477,7 @@ ERF::MakeNewLevelFromCoarse (int lev, Real time, const BoxArray& ba,
     // FillPatchers must be constructed above before this call. pp_inc is scratch; zero afterward.
     // ********************************************************************************************
     if (solverChoice.anelastic[lev]) {
-        Real dummy_dt = one;
+        double dummy_dt = 1.0;
         project_initial_velocity(lev, time, dummy_dt);
         pp_inc[lev].setVal(0.0);
     }
@@ -488,9 +492,10 @@ ERF::MakeNewLevelFromCoarse (int lev, Real time, const BoxArray& ba,
     lsm_flux[lev].resize(lsm_flux_size);
     lsm_flux_name.resize(lsm_flux_size);
     lsm.Define(lev, solverChoice);
-    if (solverChoice.lsm_type != LandSurfaceType::None)
-    {
-        lsm.Init(lev, vars_new[lev][Vars::cons], Geom(lev), zero); // dummy dt value
+    if (solverChoice.lsm_type != LandSurfaceType::None) {
+        IntVect RefRatio = (lev>0) ? refRatio(lev-1) : IntVect(1);
+        lsm.Init(lev, vars_new[lev][Vars::cons], Geom(lev), Geom(0),
+                 domain_bcs_type, RefRatio, zero, nc_init_file); // dummy dt value
     }
     for (int mvar(0); mvar<lsm_data[lev].size(); ++mvar) {
         lsm_data[lev][mvar] = lsm.Get_Data_Ptr(lev,mvar);
@@ -499,6 +504,10 @@ ERF::MakeNewLevelFromCoarse (int lev, Real time, const BoxArray& ba,
     for (int mvar(0); mvar<lsm_flux[lev].size(); ++mvar) {
         lsm_flux[lev][mvar] = lsm.Get_Flux_Ptr(lev,mvar);
         lsm_flux_name[mvar] = lsm.Get_FluxName(mvar);
+    }
+    if (lev>0) {
+        lsm.Set_Lev0_Data_Ptr(lev);
+        lsm.Set_Lev0_Flux_Ptr(lev);
     }
 
     // ********************************************************************************************
@@ -684,7 +693,7 @@ ERF::RemakeLevel (int lev, Real time, const BoxArray& ba, const DistributionMapp
     // Note that t_new = time here is elapsed time
     //
     t_new[lev] = time;
-    t_old[lev] = time - Real(1.e200);
+    t_old[lev] = time - bogus_large_value;
 
     // ********************************************************************************************
     // Build the data structures for calculating diffusive/turbulent terms
@@ -777,16 +786,18 @@ ERF::RemakeLevel (int lev, Real time, const BoxArray& ba, const DistributionMapp
     // ********************************************************************************************
     // Update the SurfaceLayer arrays at this level
     // ********************************************************************************************
-    if (phys_bc_type[Orientation(Direction::z,Orientation::low)] == ERF_BC::surface_layer) {
-        int nlevs = finest_level+1;
-        Vector<MultiFab*> mfv_old = {&vars_old[lev][Vars::cons], &vars_old[lev][Vars::xvel],
-                                     &vars_old[lev][Vars::yvel], &vars_old[lev][Vars::zvel]};
-        m_SurfaceLayer->make_SurfaceLayer_at_level(lev,nlevs,
-                                                   mfv_old, Theta_prim[lev], Qv_prim[lev],
-                                                   Qr_prim[lev], z_phys_nd[lev],
-                                                   Hwave[lev].get(),Lwave[lev].get(),eddyDiffs_lev[lev].get(),
-                                                   lsm_data[lev], lsm_data_name, lsm_flux[lev], lsm_flux_name,
-                                                   sst_lev[lev], tsk_lev[lev], lmask_lev[lev]);
+    if (m_SurfaceLayer != nullptr) {
+        if (phys_bc_type[Orientation(Direction::z,Orientation::low)] == ERF_BC::surface_layer) {
+            int nlevs = finest_level+1;
+            Vector<MultiFab*> mfv_old = {&vars_old[lev][Vars::cons], &vars_old[lev][Vars::xvel],
+                                         &vars_old[lev][Vars::yvel], &vars_old[lev][Vars::zvel]};
+            m_SurfaceLayer->make_SurfaceLayer_at_level(lev,nlevs,
+                                                       mfv_old, Theta_prim[lev], Qv_prim[lev],
+                                                       Qr_prim[lev], z_phys_nd[lev],
+                                                       Hwave[lev].get(),Lwave[lev].get(),eddyDiffs_lev[lev].get(),
+                                                       lsm_data[lev], lsm_data_name, lsm_flux[lev], lsm_flux_name,
+                                                       sst_lev[lev], tsk_lev[lev], lmask_lev[lev]);
+        }
     }
 
     // ********************************************************************************************

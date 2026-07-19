@@ -417,6 +417,18 @@ class SuperDropletPC : public ERFPC
         /*! Flag to track if device properties are initialized */
         bool m_device_props_initialized = false;
 
+        /*! Persistent GPU scratch storage for coalescence. */
+        amrex::Vector<unsigned int> m_coal_stencil_h;
+        amrex::Gpu::DeviceVector<unsigned int> m_coal_stencil_d;
+        amrex::Gpu::DeviceVector<unsigned int> m_coal_inds_tmp;
+        amrex::Gpu::DeviceVector<unsigned int> m_coal_max_np_bin_d;
+        amrex::Gpu::DeviceVector<int> m_coal_num_particles_bin;
+        amrex::Gpu::DeviceVector<int> m_coal_partner_idx;
+        amrex::Gpu::DeviceVector<int> m_coal_flag_prey;
+        amrex::Gpu::DeviceVector<amrex::ParticleReal> m_coal_rate;
+        amrex::Gpu::DeviceVector<amrex::ParticleReal> m_coal_rmndr;
+        amrex::Gpu::DeviceVector<amrex::ParticleReal> m_coal_collisions;
+
         /* recycled particle position bounds */
         amrex::Real m_recyc_xmin;
         amrex::Real m_recyc_xmax;
@@ -427,6 +439,9 @@ class SuperDropletPC : public ERFPC
 
         /*! Method to initialize device properties */
         void initializeDeviceProperties();
+
+        /*! Grow coalescence scratch arrays without reallocating each tile. */
+        void ensureCoalescenceScratch(std::size_t a_np, unsigned int a_max_np_bin);
 
         /*! \brief Build ProcessContext with geometry and species info */
         SDProcess::ProcessContext buildProcessContext(int a_lev) const

@@ -9,6 +9,21 @@
 using namespace amrex;
 using namespace SDPCDefn;
 
+void SuperDropletPC::ensureCoalescenceScratch ( std::size_t a_np,
+                                                unsigned int a_max_np_bin )
+{
+    if (m_coal_max_np_bin_d.size() == 0) { m_coal_max_np_bin_d.resize(1); }
+    if (m_coal_collisions.size() == 0) { m_coal_collisions.resize(1); }
+    if (m_coal_stencil_h.size() < a_max_np_bin) { m_coal_stencil_h.resize(a_max_np_bin); }
+    if (m_coal_stencil_d.size() < a_max_np_bin) { m_coal_stencil_d.resize(a_max_np_bin); }
+    if (m_coal_inds_tmp.size() < a_np) { m_coal_inds_tmp.resize(a_np); }
+    if (m_coal_num_particles_bin.size() < a_np) { m_coal_num_particles_bin.resize(a_np); }
+    if (m_coal_partner_idx.size() < a_np) { m_coal_partner_idx.resize(a_np); }
+    if (m_coal_flag_prey.size() < a_np) { m_coal_flag_prey.resize(a_np); }
+    if (m_coal_rate.size() < a_np) { m_coal_rate.resize(a_np); }
+    if (m_coal_rmndr.size() < a_np) { m_coal_rmndr.resize(a_np); }
+}
+
 /*! \brief Compute coalescence rate between two superdroplets */
 AMREX_GPU_DEVICE AMREX_FORCE_INLINE
 static ParticleReal coalescence_rate ( const RandomEngine& a_rnd_eng, /*!< random engine */
@@ -135,6 +150,13 @@ void SuperDropletPC::Coalescence( int   a_lev,
     double mcpairing_wtime_sec = 0.0;
     double coalescence_wtime_sec = 0.0;
 
+    ensureCoalescenceScratch(0, 0);
+    if (a_diagnostics) {
+        ParticleReal collision_zero = zero;
+        Gpu::copy(Gpu::hostToDevice, &collision_zero, &collision_zero+1,
+                  m_coal_collisions.begin());
+    }
+
 // Do NOT add OpenMP here; building DenseBins is not thread-safe.
     for (ParIterType pti(*this, a_lev); pti.isValid(); ++pti) {
 
@@ -142,6 +164,7 @@ void SuperDropletPC::Coalescence( int   a_lev,
         auto& aos = ptile.GetArrayOfStructs();
         auto& soa = ptile.GetStructOfArrays();
         const size_t np = aos.numParticles();
+        if (np == 0) { continue; }
         auto pstruct_ptr = aos().dataPtr();
 
         /* SoA attributes */
@@ -171,43 +194,7 @@ void SuperDropletPC::Coalescence( int   a_lev,
             ae_mass_ptrs[i] = soa.GetRealData(idx_a(i,num_ae,num_sp)).data();
         }
 
-        Gpu::DeviceVector<ParticleReal> sp_density(num_sp);
-        Gpu::DeviceVector<int> sp_solubility(num_sp);
-        {
-            Vector<ParticleReal> sp_density_h(num_sp);
-            Vector<int> sp_solubility_h(num_sp);
-            for (int i = 0; i < num_sp; i++) {
-                sp_density_h[i] = m_species_mat[i]->m_density;
-                sp_solubility_h[i] = static_cast<int>(m_species_mat[i]->m_is_soluble);
-            }
-            Gpu::copy(  Gpu::hostToDevice,
-                        sp_density_h.begin(),
-                        sp_density_h.end(),
-                        sp_density.begin() );
-            Gpu::copy(  Gpu::hostToDevice,
-                        sp_solubility_h.begin(),
-                        sp_solubility_h.end(),
-                        sp_solubility.begin() );
-        }
-
-        Gpu::DeviceVector<ParticleReal> ae_density(num_ae);
-        Gpu::DeviceVector<int> ae_solubility(num_ae);
-        {
-            Vector<ParticleReal> ae_density_h(num_ae);
-            Vector<int> ae_solubility_h(num_ae);
-            for (int i = 0; i < num_ae; i++) {
-                ae_density_h[i] = m_aerosol_mat[i]->m_density;
-                ae_solubility_h[i] = static_cast<int>(m_aerosol_mat[i]->m_is_soluble);
-            }
-            Gpu::copy(  Gpu::hostToDevice,
-                        ae_density_h.begin(),
-                        ae_density_h.end(),
-                        ae_density.begin() );
-            Gpu::copy(  Gpu::hostToDevice,
-                        ae_solubility_h.begin(),
-                        ae_solubility_h.end(),
-                        ae_solubility.begin() );
-        }
+        if (!m_device_props_initialized) { initializeDeviceProperties(); }
 
         int grid = pti.index();
         Box box = a_temperature[grid].box(); box.grow(-gvec);
@@ -227,8 +214,10 @@ void SuperDropletPC::Coalescence( int   a_lev,
 #ifdef AMREX_USE_GPU
         {
             // get the max bin size
-            Gpu::Buffer<unsigned int> max_np_bin_d({0});
-            auto max_np_bin_ptr = max_np_bin_d.data();
+            unsigned int max_np_bin_zero = 0;
+            Gpu::copy(Gpu::hostToDevice, &max_np_bin_zero, &max_np_bin_zero+1,
+                      m_coal_max_np_bin_d.begin());
+            auto max_np_bin_ptr = m_coal_max_np_bin_d.data();
             ParallelFor( bins.numBins(), [=] AMREX_GPU_DEVICE (int i_bin) noexcept
             {
                 auto bin_start = offsets[i_bin];
@@ -237,25 +226,24 @@ void SuperDropletPC::Coalescence( int   a_lev,
                 Gpu::Atomic::Max(max_np_bin_ptr, static_cast<unsigned int>(np_bin));
             });
             Gpu::synchronize();
-            auto max_np_bin = *(max_np_bin_d.copyToHost());
+            Gpu::synchronize();
+            unsigned int max_np_bin = 0;
+            Gpu::copy(Gpu::deviceToHost, m_coal_max_np_bin_d.begin(),
+                      m_coal_max_np_bin_d.begin()+1, &max_np_bin);
+            ensureCoalescenceScratch(np, max_np_bin);
             // create a stencil vector with integers [0, max_np_bin-1]
-            Vector<unsigned int> stencil_vec(max_np_bin);
-            for (unsigned int i = 0; i < max_np_bin; i++) { stencil_vec[i] = i; }
+            for (unsigned int i = 0; i < max_np_bin; i++) { m_coal_stencil_h[i] = i; }
             // now shuffle it
-            std::shuffle ( stencil_vec.begin(),stencil_vec.end(), m_rndeng );
+            std::shuffle ( m_coal_stencil_h.begin(), m_coal_stencil_h.begin()+max_np_bin, m_rndeng );
             // Copy to device
-            Gpu::DeviceVector<unsigned int> stencil_vec_d;
-            stencil_vec_d.resize(max_np_bin);
             Gpu::copy(  Gpu::hostToDevice,
-                        stencil_vec.begin(),
-                        stencil_vec.end(),
-                        stencil_vec_d.begin() );
+                        m_coal_stencil_h.begin(),
+                        m_coal_stencil_h.begin()+max_np_bin,
+                        m_coal_stencil_d.begin() );
             Gpu::synchronize();
             // use this stencil to shuffle each bin
-            Gpu::DeviceVector<unsigned int> inds_tmp;
-            inds_tmp.resize(np);
-            auto stencil_vec_ptr = stencil_vec_d.data();
-            auto inds_tmp_ptr = inds_tmp.data();
+            auto stencil_vec_ptr = m_coal_stencil_d.data();
+            auto inds_tmp_ptr = m_coal_inds_tmp.data();
             ParallelFor( bins.numBins(), [=] AMREX_GPU_DEVICE (int i_bin) noexcept
             {
                 auto bin_start = offsets[i_bin];
@@ -301,21 +289,13 @@ void SuperDropletPC::Coalescence( int   a_lev,
 
         CollisionKernel<ParticleReal,AMREX_SPACEDIM> ckernel{};
 
-        Gpu::Buffer<ParticleReal> particle_collisions({0});
-        auto particle_collisions_ptr = particle_collisions.data();
-
-        Gpu::DeviceVector<int> coal_partner_idx, flag_prey, num_particles_bin;
-        Gpu::DeviceVector<ParticleReal> coal_rate, coal_rmndr;
-        num_particles_bin.resize(np);
-        coal_partner_idx.resize(np);
-        flag_prey.resize(np);
-        coal_rate.resize(np);
-        coal_rmndr.resize(np);
-        auto np_bin_ptr = num_particles_bin.data();
-        auto partner_idx_ptr = coal_partner_idx.data();
-        auto flag_prey_ptr = flag_prey.data();
-        auto coal_rate_ptr = coal_rate.data();
-        auto coal_rmndr_ptr = coal_rmndr.data();
+        ensureCoalescenceScratch(np, 0);
+        auto np_bin_ptr = m_coal_num_particles_bin.data();
+        auto partner_idx_ptr = m_coal_partner_idx.data();
+        auto flag_prey_ptr = m_coal_flag_prey.data();
+        auto coal_rate_ptr = m_coal_rate.data();
+        auto coal_rmndr_ptr = m_coal_rmndr.data();
+        auto particle_collisions_ptr = m_coal_collisions.data();
         ParallelFor( np, [=] AMREX_GPU_DEVICE (int i) noexcept
         {
             np_bin_ptr[i] = 0;
@@ -371,10 +351,10 @@ void SuperDropletPC::Coalescence( int   a_lev,
         }
 #endif
 
-        auto sp_rho_arr = sp_density.data();
-        auto sp_sol_arr = sp_solubility.data();
-        auto ae_rho_arr = ae_density.data();
-        auto ae_sol_arr = ae_solubility.data();
+        auto sp_rho_arr = m_sp_density.data();
+        auto sp_sol_arr = m_sp_solubility.data();
+        auto ae_rho_arr = m_ae_density.data();
+        auto ae_sol_arr = m_ae_solubility.data();
 
         ParallelForRNG( np, [=] AMREX_GPU_DEVICE (int i, RandomEngine const& rnd_eng) noexcept
         {
@@ -484,9 +464,6 @@ void SuperDropletPC::Coalescence( int   a_lev,
 
         } );
         Gpu::synchronize();
-        if (a_diagnostics) {
-            num_collisions += static_cast<Real>(*(particle_collisions.copyToHost()));
-        }
 
         ParallelFor( np, [=] AMREX_GPU_DEVICE (int i)
         {
@@ -518,6 +495,11 @@ void SuperDropletPC::Coalescence( int   a_lev,
     }
 
     if (a_diagnostics) {
+        Gpu::synchronize();
+        ParticleReal particle_collisions = zero;
+        Gpu::copy(Gpu::deviceToHost, m_coal_collisions.begin(),
+                  m_coal_collisions.begin()+1, &particle_collisions);
+        num_collisions = static_cast<Real>(particle_collisions);
         ParallelDescriptor::ReduceRealSum(  &num_collisions,
                                             1,
                                             ParallelDescriptor::IOProcessorNumber() );

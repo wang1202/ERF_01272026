@@ -98,3 +98,48 @@ GPU parallelism reduces the constant factor but doesn't change algorithmic compl
 - Batch tile operations for coalescence to reduce host-side serialization
 - Profile Redistribute() overhead
 - Consider fusing shuffle + pairing into fewer kernel launches
+
+## GPU Performance Validation Workflow
+
+Use a clean build with the particle and CUDA options enabled, for example:
+
+```bash
+cmake -S . -B build-sdm-gpu \
+  -DERF_ENABLE_MPI=ON -DERF_ENABLE_CUDA=ON -DERF_ENABLE_PARTICLES=ON \
+  -DERF_ENABLE_TESTS=ON
+cmake --build build-sdm-gpu -j
+```
+
+Before collecting timings, enumerate the SDM tests and select the relevant
+cloud-chamber or scaling cases:
+
+```bash
+ctest --test-dir build-sdm-gpu -N
+ctest --test-dir build-sdm-gpu -R SDM --output-on-failure
+```
+
+For repeatable comparisons, set `erf.fix_random_seed = 1` in the input file
+(the SDM initializer then uses its fixed seed of 1024). Keep the mesh,
+particle initialization, timestep, and MPI rank count identical between runs.
+Record total wall time and the SDM diagnostics for total particle count,
+water/species/aerosol mass, cloud and rain mass, collision count, phase-change
+non-convergence count, and the first successful injection timestep.
+
+Run a full-physics baseline and isolating variants with the same input:
+
+1. full SDM;
+2. coalescence disabled;
+3. phase change disabled;
+4. particle advection disabled.
+
+Use TinyProfiler (or the configured AMReX profiling output) for the same
+regions in each run: `SuperDropletPC::Coalescence`,
+`SuperDropletPC::MassChange`, `SuperDropletPC::AdvectParticles`,
+`ERFPCParticleToMesh`, `SuperDropletPC::Diagnostics`, and particle
+redistribution. GPU kernel timings may require synchronization around the
+profiled region; document any profiler setting that changes synchronization.
+Do not enable profiler-induced synchronization in production measurements
+unless it is explicitly stated. Compare diagnostics and conservation first,
+then compare wall time and region timings. Do not claim a speedup until the
+runs are on the same backend and configuration; report neutral or slower
+results honestly.

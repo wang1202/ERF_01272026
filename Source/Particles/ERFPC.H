@@ -161,6 +161,15 @@ class ERFPC : public amrex::ParticleContainer<  0,                              
                                  int a_lev, int a_comp,
                                  ValueFunc&& value_func) const;
 
+        /*! Two-component variant used when several particle classes share a traversal. */
+        template<typename ValueFunc>
+        void ERFPCParticleToMeshMultiComp(amrex::MultiFab& a_mf,
+                                          const amrex::MultiFab& a_z_phys_nd,
+                                          int a_lev,
+                                          int a_comp0,
+                                          int a_comp1,
+                                          ValueFunc&& value_func) const;
+
         /*! Default particle initialization */
         void initializeParticlesUniformDistributionInBox (const std::unique_ptr<amrex::MultiFab>& a_ptr,
                                                           const amrex::RealBox& particle_box);

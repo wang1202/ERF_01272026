@@ -316,6 +316,33 @@ void SuperDropletPC::cloudRainDensity(MultiFab& a_mf, const MultiFab& a_z_phys_n
         });
 }
 
+/*! Computes cloud and rain mass density together over a mesh. */
+void SuperDropletPC::cloudRainDensity(MultiFab& a_mf, const MultiFab& a_z_phys_nd,
+                                      int a_lev, const Real a_rain_radius,
+                                      int a_cloud_comp, int a_rain_comp) const
+{
+    BL_PROFILE("SuperDropletPC::cloudRainDensityMultiComp()");
+    const auto na = m_num_aerosols;
+    const auto ns = m_num_species;
+    const auto idx = m_idx_w;
+    ERFPCParticleToMeshMultiComp(a_mf, a_z_phys_nd, a_lev,
+                                 a_cloud_comp, a_rain_comp,
+        [=] AMREX_GPU_DEVICE (const SDTDType& ptd, int i) {
+            amrex::GpuArray<ParticleReal,2> values{ParticleReal(0), ParticleReal(0)};
+            const auto radius = ptd.m_runtime_rdata[SuperDropletsRealIdxSoA_RT::radius][i];
+            const auto ai = ptd.m_runtime_idata[SuperDropletsIntIdxSoA_RT::active][i];
+            const auto num_par = ptd.m_runtime_rdata[SuperDropletsRealIdxSoA_RT::multiplicity][i];
+            const auto species_mass = ptd.m_runtime_rdata[ridx_s(idx,na,ns)][i];
+            const auto value = ai * num_par * species_mass;
+            if (radius < a_rain_radius) {
+                values[0] = value;
+            } else if (radius < one) {
+                values[1] = value;
+            }
+            return values;
+        });
+}
+
 /*! Computes the species mass flux of the particles over a mesh */
 void SuperDropletPC::speciesMassFlux ( MultiFab& a_mf,
                                        const MultiFab& a_z_phys_nd,

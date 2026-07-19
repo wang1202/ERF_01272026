@@ -299,6 +299,13 @@ class SuperDropletPC : public ERFPC
                                         amrex::Real,
                                         amrex::Real,
                                         const int a_comp = 0) const;
+        /*! Compute cloud and rain densities together in one particle traversal. */
+        virtual void cloudRainDensity ( amrex::MultiFab&,
+                                        const amrex::MultiFab& a_z_phys_nd,
+                                        int a_lev,
+                                        amrex::Real,
+                                        int a_cloud_comp,
+                                        int a_rain_comp) const;
 
         /*! \brief Compute the species mass flux component on a mesh */
         virtual void speciesMassFlux ( amrex::MultiFab&, const amrex::MultiFab& a_z_phys_nd, int a_lev, const int, const int, const int a_comp=0 ) const;

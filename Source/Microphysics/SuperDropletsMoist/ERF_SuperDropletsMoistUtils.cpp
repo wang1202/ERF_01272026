@@ -437,16 +437,13 @@ void SuperDropletsMoist::computeQcQrWater (const MultiFab& a_z_phys_nd)
 
     const int lev = m_current_lev;
 
-    m_super_droplets->cloudRainDensity( *(m_mic_fab_vars[lev][MicVar_SD::q_c]),
-                                        a_z_phys_nd,
-                                        lev,
-                                        0,
-                                        m_r_rain );
-    m_super_droplets->cloudRainDensity( *(m_mic_fab_vars[lev][MicVar_SD::q_r]),
-                                        a_z_phys_nd,
-                                        lev,
-                                        m_r_rain,
-                                        one );
+    MultiFab cloud_rain(m_mic_fab_vars[lev][MicVar_SD::q_c]->boxArray(),
+                        m_mic_fab_vars[lev][MicVar_SD::q_c]->DistributionMap(),
+                        2, m_mic_fab_vars[lev][MicVar_SD::q_c]->nGrowVect());
+    m_super_droplets->cloudRainDensity(cloud_rain, a_z_phys_nd, lev,
+                                       m_r_rain, 0, 1);
+    MultiFab::Copy(*(m_mic_fab_vars[lev][MicVar_SD::q_c]), cloud_rain, 0, 0, 1, 0);
+    MultiFab::Copy(*(m_mic_fab_vars[lev][MicVar_SD::q_r]), cloud_rain, 1, 0, 1, 0);
 
     if (m_dimensionality == SDMSimulationDim::one_d_z) {
         for ( MFIter mfi(*m_mic_fab_vars[lev][MicVar_SD::q_c]); mfi.isValid(); ++mfi) {

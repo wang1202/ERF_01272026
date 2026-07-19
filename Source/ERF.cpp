@@ -545,6 +545,14 @@ ERF::InitData ()
 void
 ERF::InitData_pre ()
 {
+    if (m_driver_has_atm2ocn_coupling && verbose > 0) {
+        amrex::Print() << "ERF InitData_pre: driver-managed atm2ocn coupling enabled"
+                       << " two_way=" << (m_driver_uses_two_way_coupling ? 1 : 0)
+                       << " active_contract="
+                       << (m_driver_atm2ocn_uses_state_contract ? "state" : "flux")
+                       << "\n";
+    }
+
     // Initialize the start time for our CPU-time tracker
     startCPUTime = ParallelDescriptor::second();
 
@@ -581,6 +589,11 @@ ERF::InitData_post ()
     if (!restart_chkfile.empty()) {
         restart();
     }
+
+    // Select 2-D variables after the active LSM has initialized its runtime
+    // field inventory, including provider-specific soil layers.
+    setPlotVariables2D("plot2d_vars_1", plot2d_var_names_1);
+    setPlotVariables2D("plot2d_vars_2", plot2d_var_names_2);
 
     //
     // Make sure that detJ and z_phys_cc are the average of the data on a finer level if there is one and if two way coupling
@@ -1935,7 +1948,11 @@ ERF::init_only (int lev, double elapsed_time)
     // Initialize turbulent perturbation
     if (solverChoice.use_perturbation(lev)) {
         turbPert_update(lev, zero);
-        turbPert_amplitude(lev);
+        if (solverChoice.use_wvel_perturbation(lev)) {
+            turbPert_amplitude_w(lev);
+        } else {
+            turbPert_amplitude(lev);
+        }
     }
 
     // Set initial velocity field for immersed cells to be close to 0

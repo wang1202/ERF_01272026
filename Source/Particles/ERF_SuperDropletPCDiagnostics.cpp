@@ -74,6 +74,21 @@ void SuperDropletPC::Diagnostics( const int a_iter,
 {
     BL_PROFILE("SuperDropletPC::Diagnostics()");
 
+    // Full particle reductions and distribution output are informational and
+    // are only needed on the configured diagnostic iterations.  Keep the
+    // phase-change convergence warning lightweight and correctness-critical.
+    if (!a_flag) {
+        Long num_unconverged_particles = m_num_unconverged_particles;
+        m_num_unconverged_particles = 0;
+        ParallelDescriptor::ReduceLongSum(&num_unconverged_particles, 1);
+        if (num_unconverged_particles > 0) {
+            Print() << "SuperDropletPC::MassChange(): Warning - "
+                    << num_unconverged_particles
+                    << " particles did not converge.\n";
+        }
+        return;
+    }
+
     auto num_total_particles = TotalNumberOfParticles();
     auto num_superdroplets = static_cast<Real>(NumSuperDroplets());
 

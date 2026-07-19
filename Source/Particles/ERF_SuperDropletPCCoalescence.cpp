@@ -87,11 +87,15 @@ static void coal_update_attribs(const int a_i, /*!< index of particle */
 void SuperDropletPC::Coalescence( int   a_lev,
                                   double                               a_dt,
                                   const MultiFab& a_pressure,
-                                  const MultiFab& a_temperature )
+                                  const MultiFab& a_temperature,
+                                  const bool a_diagnostics )
 {
 #ifndef _WIN32
     struct timeval total_start, total_end;
-    gettimeofday(&total_start, NULL);
+    struct timeval mcshuffle_start, mcshuffle_end;
+    struct timeval mcpairing_start, mcpairing_end;
+    struct timeval coalescence_start, coalescence_end;
+    if (a_diagnostics) { gettimeofday(&total_start, NULL); }
 #endif
 
     BL_PROFILE("SuperDropletPC::Coalescence()");
@@ -217,8 +221,7 @@ void SuperDropletPC::Coalescence( int   a_lev,
         auto offsets = bins.offsetsPtr();
 
 #ifndef _WIN32
-        struct timeval mcshuffle_start, mcshuffle_end;
-        gettimeofday(&mcshuffle_start, NULL);
+        if (a_diagnostics) { gettimeofday(&mcshuffle_start, NULL); }
 #endif
 
 #ifdef AMREX_USE_GPU
@@ -284,11 +287,13 @@ void SuperDropletPC::Coalescence( int   a_lev,
 #endif
 
 #ifndef _WIN32
-        gettimeofday(&mcshuffle_end,NULL);
-        long long mcshuffle_wtime;
-        mcshuffle_wtime = (   (mcshuffle_end.tv_sec   * 1000000 + mcshuffle_end.tv_usec  )
-                            - (mcshuffle_start.tv_sec * 1000000 + mcshuffle_start.tv_usec) );
-        mcshuffle_wtime_sec += (double) mcshuffle_wtime / Real(1000000.0);
+        if (a_diagnostics) {
+            gettimeofday(&mcshuffle_end,NULL);
+            long long mcshuffle_wtime;
+            mcshuffle_wtime = (   (mcshuffle_end.tv_sec   * 1000000 + mcshuffle_end.tv_usec  )
+                                - (mcshuffle_start.tv_sec * 1000000 + mcshuffle_start.tv_usec) );
+            mcshuffle_wtime_sec += (double) mcshuffle_wtime / Real(1000000.0);
+        }
 #endif
 
         const auto& pressure_arr = a_pressure[grid].const_array();
@@ -322,8 +327,7 @@ void SuperDropletPC::Coalescence( int   a_lev,
         Gpu::synchronize();
 
 #ifndef _WIN32
-        struct timeval mcpairing_start, mcpairing_end;
-        gettimeofday(&mcpairing_start, NULL);
+        if (a_diagnostics) { gettimeofday(&mcpairing_start, NULL); }
 #endif
 
         ParallelFor( bins.numBins(), [=] AMREX_GPU_DEVICE (int i_bin) noexcept
@@ -357,14 +361,14 @@ void SuperDropletPC::Coalescence( int   a_lev,
         Gpu::synchronize();
 
 #ifndef _WIN32
-        gettimeofday(&mcpairing_end,NULL);
-        long long mcpairing_wtime;
-        mcpairing_wtime = (   (mcpairing_end.tv_sec   * 1000000 + mcpairing_end.tv_usec  )
-                            - (mcpairing_start.tv_sec * 1000000 + mcpairing_start.tv_usec) );
-        mcpairing_wtime_sec += (double) mcpairing_wtime / Real(1000000.0);
-
-        struct timeval coalescence_start, coalescence_end;
-        gettimeofday(&coalescence_start, NULL);
+        if (a_diagnostics) {
+            gettimeofday(&mcpairing_end,NULL);
+            long long mcpairing_wtime;
+            mcpairing_wtime = (   (mcpairing_end.tv_sec   * 1000000 + mcpairing_end.tv_usec  )
+                                - (mcpairing_start.tv_sec * 1000000 + mcpairing_start.tv_usec) );
+            mcpairing_wtime_sec += (double) mcpairing_wtime / Real(1000000.0);
+            gettimeofday(&coalescence_start, NULL);
+        }
 #endif
 
         auto sp_rho_arr = sp_density.data();
@@ -466,7 +470,9 @@ void SuperDropletPC::Coalescence( int   a_lev,
 
             auto gamma = coalescence_rate ( rnd_eng, static_cast<Real>(scaled_prob*a_dt) );
             if (gamma > 0) {
-                amrex::Gpu::Atomic::Add(particle_collisions_ptr, gamma);
+                if (a_diagnostics) {
+                    amrex::Gpu::Atomic::Add(particle_collisions_ptr, gamma);
+                }
                 coal_rate_ptr[pi] = std::min(gamma,std::floor(mult_ptr[pi]/mult_ptr[pj]));
                 coal_rate_ptr[pj] = coal_rate_ptr[pi];
                 coal_rmndr_ptr[pi] = mult_ptr[pi] - coal_rate_ptr[pi]*mult_ptr[pj];
@@ -478,7 +484,9 @@ void SuperDropletPC::Coalescence( int   a_lev,
 
         } );
         Gpu::synchronize();
-        num_collisions = static_cast<Real>(*(particle_collisions.copyToHost()));
+        if (a_diagnostics) {
+            num_collisions += static_cast<Real>(*(particle_collisions.copyToHost()));
+        }
 
         ParallelFor( np, [=] AMREX_GPU_DEVICE (int i)
         {
@@ -499,49 +507,58 @@ void SuperDropletPC::Coalescence( int   a_lev,
         Gpu::synchronize();
 
 #ifndef _WIN32
-        gettimeofday(&coalescence_end,NULL);
-        long long coalescence_wtime;
-        coalescence_wtime = (  (coalescence_end.tv_sec   * 1000000 + coalescence_end.tv_usec  )
-                             - (coalescence_start.tv_sec * 1000000 + coalescence_start.tv_usec) );
-        coalescence_wtime_sec += (double) coalescence_wtime / Real(1000000.0);
+        if (a_diagnostics) {
+            gettimeofday(&coalescence_end,NULL);
+            long long coalescence_wtime;
+            coalescence_wtime = (  (coalescence_end.tv_sec   * 1000000 + coalescence_end.tv_usec  )
+                                 - (coalescence_start.tv_sec * 1000000 + coalescence_start.tv_usec) );
+            coalescence_wtime_sec += (double) coalescence_wtime / Real(1000000.0);
+        }
 #endif
     }
 
-    ParallelDescriptor::ReduceRealSum(  &num_collisions,
-                                        1,
-                                        ParallelDescriptor::IOProcessorNumber() );
+    if (a_diagnostics) {
+        ParallelDescriptor::ReduceRealSum(  &num_collisions,
+                                            1,
+                                            ParallelDescriptor::IOProcessorNumber() );
+    }
 
 #ifndef _WIN32
-    gettimeofday(&total_end,NULL);
-    long long total_wtime;
-    total_wtime = (   (total_end.tv_sec   * 1000000 + total_end.tv_usec  )
-                   -  (total_start.tv_sec * 1000000 + total_start.tv_usec) );
-    double total_wtime_sec = static_cast<double>(total_wtime) / 1000000.0;
+    double total_wtime_sec = 0.0;
+    if (a_diagnostics) {
+        gettimeofday(&total_end,NULL);
+        long long total_wtime;
+        total_wtime = (   (total_end.tv_sec   * 1000000 + total_end.tv_usec  )
+                       -  (total_start.tv_sec * 1000000 + total_start.tv_usec) );
+        total_wtime_sec = static_cast<double>(total_wtime) / 1000000.0;
 
-    ParallelDescriptor::ReduceRealMax( &mcshuffle_wtime_sec,
-                                       1,
-                                       ParallelDescriptor::IOProcessorNumber() );
-    ParallelDescriptor::ReduceRealMax( &mcpairing_wtime_sec,
-                                       1,
-                                       ParallelDescriptor::IOProcessorNumber() );
-    ParallelDescriptor::ReduceRealMax( &coalescence_wtime_sec,
-                                       1,
-                                       ParallelDescriptor::IOProcessorNumber() );
-    ParallelDescriptor::ReduceRealMax( &total_wtime_sec,
-                                       1,
-                                       ParallelDescriptor::IOProcessorNumber() );
+        ParallelDescriptor::ReduceRealMax( &mcshuffle_wtime_sec,
+                                           1,
+                                           ParallelDescriptor::IOProcessorNumber() );
+        ParallelDescriptor::ReduceRealMax( &mcpairing_wtime_sec,
+                                           1,
+                                           ParallelDescriptor::IOProcessorNumber() );
+        ParallelDescriptor::ReduceRealMax( &coalescence_wtime_sec,
+                                           1,
+                                           ParallelDescriptor::IOProcessorNumber() );
+        ParallelDescriptor::ReduceRealMax( &total_wtime_sec,
+                                           1,
+                                           ParallelDescriptor::IOProcessorNumber() );
+    }
 #else
     double total_wtime_sec = 0.0;
 #endif
 
-    Print() << "SuperDropletPC(" << m_name << "): "
-            << "number of collisions = " << num_collisions << "\n"
-            << "    "
-            << "wall time (seconds) = " << total_wtime_sec << " (total), "
-            << mcshuffle_wtime_sec << " (MC shuffle), "
-            << mcpairing_wtime_sec << " (MC pairing), "
-            << coalescence_wtime_sec << " (coalescence)"
-            << "\n";
+    if (a_diagnostics) {
+        Print() << "SuperDropletPC(" << m_name << "): "
+                << "number of collisions = " << num_collisions << "\n"
+                << "    "
+                << "wall time (seconds) = " << total_wtime_sec << " (total), "
+                << mcshuffle_wtime_sec << " (MC shuffle), "
+                << mcpairing_wtime_sec << " (MC pairing), "
+                << coalescence_wtime_sec << " (coalescence)"
+                << "\n";
+    }
 }
 
 #endif

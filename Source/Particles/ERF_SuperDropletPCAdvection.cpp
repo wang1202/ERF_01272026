@@ -35,7 +35,8 @@ void SuperDropletPC::AdvectParticles ( int                   a_lev,
                                        const MultiFab&       a_temperature,
                                        const Vector<MFPtr>&  a_z_phys_nd,
                                        const BCTypeArr&      a_bctypes,
-                                       const bool            a_recycle )
+                                       const bool            a_recycle,
+                                       const bool            a_report_diagnostics )
 {
     BL_PROFILE("SuperDropletPC::AdvectParticles()");
     AMREX_ALWAYS_ASSERT((a_lev >= 0) && (a_lev <= finestLevel()));
@@ -179,7 +180,7 @@ void SuperDropletPC::AdvectParticles ( int                   a_lev,
         Gpu::synchronize();
     }); // end forEachParticleTile
 
-    applyBoundaryTreatment(a_lev, a_z_phys_nd, a_bctypes, a_recycle);
+    applyBoundaryTreatment(a_lev, a_z_phys_nd, a_bctypes, a_recycle, a_report_diagnostics);
     Redistribute();
 }
 

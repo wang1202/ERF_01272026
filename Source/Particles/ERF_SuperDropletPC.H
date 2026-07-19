@@ -211,7 +211,8 @@ class SuperDropletPC : public ERFPC
                                          const amrex::MultiFab& a_temperature,
                                          const amrex::Vector<MFPtr>& a_z_phys_nd,
                                          const BCTypeArr& a_bctypes,
-                                         const bool a_recycle);
+                                         const bool a_recycle,
+                                         const bool a_report_diagnostics);
 
         /*! \brief Grow/shrink particles for one time step */
         virtual void MassChange (   int a_lev,
@@ -228,7 +229,8 @@ class SuperDropletPC : public ERFPC
         virtual void Coalescence (  int a_lev,
                                     double a_dt,
                                     const amrex::MultiFab& a_pressure,
-                                    const amrex::MultiFab& a_temperature);
+                                    const amrex::MultiFab& a_temperature,
+                                    const bool a_diagnostics);
 
         /*! \brief Apply size-dependent wall loss of super-droplets to the side walls.
          *
@@ -310,7 +312,8 @@ class SuperDropletPC : public ERFPC
         virtual void effectiveRadius ( amrex::MultiFab&, const amrex::MultiFab& a_z_phys_nd, int a_lev, const int a_comp=0 ) const;
 
         /*! \brief Applies boundary treatment to the particle container */
-        virtual void applyBoundaryTreatment ( int, const amrex::Vector<MFPtr>&, const BCTypeArr&, const bool );
+        virtual void applyBoundaryTreatment ( int, const amrex::Vector<MFPtr>&,
+                                              const BCTypeArr&, const bool, const bool );
 
     protected:
 

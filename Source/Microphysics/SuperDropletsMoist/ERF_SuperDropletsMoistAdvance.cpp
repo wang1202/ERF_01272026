@@ -127,7 +127,8 @@ void SuperDropletsMoist::Advance ( const Real& a_dt,
                                             *(m_mic_fab_vars[lev][MicVar_SD::temperature]),
                                             a_z,
                                             a_bc,
-                                            m_recycle_particles );
+                                            m_recycle_particles,
+                                            do_diagnostics );
     }
 
     // Size-dependent loss of super-droplets to the (lateral) side walls.
@@ -139,7 +140,8 @@ void SuperDropletsMoist::Advance ( const Real& a_dt,
         m_super_droplets->Coalescence(  current_lev,
                                         a_dt,
                                         *m_mic_fab_vars[lev][MicVar_SD::pressure],
-                                        *m_mic_fab_vars[lev][MicVar_SD::temperature] );
+                                        *m_mic_fab_vars[lev][MicVar_SD::temperature],
+                                        do_diagnostics );
     }
 
     // Recycle super-droplets
@@ -147,7 +149,7 @@ void SuperDropletsMoist::Advance ( const Real& a_dt,
 
     // Diagnostics on level 0 only (avoids double-counting)
     if (current_lev == 0) {
-        m_super_droplets->Diagnostics(a_iter, current_lev, a_time, (((a_iter+1)%m_diagnostics_iter==0) && (m_diagnostics_iter>0)));
+        m_super_droplets->Diagnostics(a_iter, current_lev, a_time, do_diagnostics);
 
         // Domain-averaged time series output
         if (m_domain_ts_interval > 0 && ((a_iter+1) % m_domain_ts_interval == 0)) {

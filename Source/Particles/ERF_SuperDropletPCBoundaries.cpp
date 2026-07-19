@@ -13,7 +13,8 @@ using namespace SDPCDefn;
 void SuperDropletPC::applyBoundaryTreatment ( int                   a_lev,
                                               const Vector<MFPtr>&  a_z_phys_nd,
                                               const BCTypeArr&      a_bctypes,
-                                              const bool            a_recycle )
+                                              const bool            a_recycle,
+                                              const bool            a_report_diagnostics )
 {
     BL_PROFILE("SuperDropletPC::applyBoundaryTreatment()");
     const MFPtr& z_height = a_z_phys_nd[a_lev];
@@ -64,7 +65,9 @@ void SuperDropletPC::applyBoundaryTreatment ( int                   a_lev,
                     ptrs.v_ptr[0][i] = ptrs.v_ptr[1][i] = ptrs.v_ptr[2][i] = ptrs.vterm_ptr[i] = zero;
                     ptrs.active_ptr[i] = 0;
                     if ((!a_recycle) && (!save_inac)) { p.id() = -1; }
-                    Gpu::Atomic::Add(deactivated_particles_ptr, Long(1));
+                    if (a_report_diagnostics) {
+                        Gpu::Atomic::Add(deactivated_particles_ptr, Long(1));
+                    }
                 }
             }
 
@@ -83,7 +86,9 @@ void SuperDropletPC::applyBoundaryTreatment ( int                   a_lev,
                     ptrs.v_ptr[0][i] = ptrs.v_ptr[1][i] = ptrs.v_ptr[2][i] = ptrs.vterm_ptr[i] = zero;
                     ptrs.active_ptr[i] = 0;
                     if ((!a_recycle) && (!save_inac)) { p.id() = -1; }
-                    Gpu::Atomic::Add(deactivated_particles_ptr, Long(1));
+                    if (a_report_diagnostics) {
+                        Gpu::Atomic::Add(deactivated_particles_ptr, Long(1));
+                    }
                 }
             }
 
@@ -105,7 +110,9 @@ void SuperDropletPC::applyBoundaryTreatment ( int                   a_lev,
                         ptrs.v_ptr[0][i] = ptrs.v_ptr[1][i] = ptrs.v_ptr[2][i] = ptrs.vterm_ptr[i] = zero;
                         ptrs.active_ptr[i] = 0;
                         if ((!a_recycle) && (!save_inac)) { p.id() = -1; }
-                        Gpu::Atomic::Add(deactivated_particles_ptr, Long(1));
+                        if (a_report_diagnostics) {
+                            Gpu::Atomic::Add(deactivated_particles_ptr, Long(1));
+                        }
 
                     } else {
 
@@ -136,7 +143,9 @@ void SuperDropletPC::applyBoundaryTreatment ( int                   a_lev,
                         ptrs.v_ptr[0][i] = ptrs.v_ptr[1][i] = ptrs.v_ptr[2][i] = ptrs.vterm_ptr[i] = zero;
                         ptrs.active_ptr[i] = 0;
                         if ((!a_recycle) && (!save_inac)) { p.id() = -1; }
-                        Gpu::Atomic::Add(deactivated_particles_ptr, Long(1));
+                        if (a_report_diagnostics) {
+                            Gpu::Atomic::Add(deactivated_particles_ptr, Long(1));
+                        }
 
                     } else {
 
@@ -163,13 +172,17 @@ void SuperDropletPC::applyBoundaryTreatment ( int                   a_lev,
 
             }
         });
-        Gpu::synchronize();
-        num_deactivated_particles += *(deactivated_particles.copyToHost());
+        if (a_report_diagnostics) {
+            Gpu::synchronize();
+            num_deactivated_particles += *(deactivated_particles.copyToHost());
+        }
     }); // end forEachParticleTile
 
-    ParallelDescriptor::ReduceLongSum( &num_deactivated_particles, 1 );
-    Print() << "SuperDropletPC(" << m_name << "): "
-            << "deactivated " << num_deactivated_particles << " super-droplets at boundaries.\n";
+    if (a_report_diagnostics) {
+        ParallelDescriptor::ReduceLongSum( &num_deactivated_particles, 1 );
+        Print() << "SuperDropletPC(" << m_name << "): "
+                << "deactivated " << num_deactivated_particles << " super-droplets at boundaries.\n";
+    }
 }
 
 #endif

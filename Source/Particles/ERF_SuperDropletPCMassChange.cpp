@@ -64,6 +64,12 @@ void SuperDropletPC::MassChange ( int                                         a_
                                                                       static_cast<ParticleReal>(m_newton_stol),
                                                                       m_newton_maxits };
 
+    // Keep one device-side counter for the complete level traversal.  This
+    // avoids a host copy for every particle tile while preserving the same
+    // atomic accumulation performed by the kernels.
+    Gpu::Buffer<Long> unconverged_particles({0});
+    auto* unconverged_particles_ptr = unconverged_particles.data();
+
 #ifdef ERF_USE_ML_UPHYS_DIAGNOSTICS
     dRdt<ParticleReal> drdt{ static_cast<ParticleReal>(vapour_mat.m_lat_vap),
                              static_cast<ParticleReal>(therco),
@@ -89,9 +95,6 @@ void SuperDropletPC::MassChange ( int                                         a_
         const auto& sat_ratio_arr = a_sat_ratio[grid].array();
         const auto& temperature_arr = a_temperature[grid].array();
         const auto& pressure_arr = a_pressure[grid].array();
-
-        Gpu::Buffer<Long> unconverged_particles({0});
-        auto* unconverged_particles_ptr = unconverged_particles.data();
 
         AMREX_ASSERT_WITH_MESSAGE( ti_choice == SDMassChangeTIMethod::RK4 ||
                                    ti_choice == SDMassChangeTIMethod::RK3BS ||
@@ -216,8 +219,10 @@ void SuperDropletPC::MassChange ( int                                         a_
 
         });
         Gpu::synchronize();
-        m_num_unconverged_particles += static_cast<long>(*(unconverged_particles.copyToHost()));
     }); // end forEachParticleTile
+
+    Gpu::synchronize();
+    m_num_unconverged_particles += static_cast<long>(*(unconverged_particles.copyToHost()));
 
 }
 

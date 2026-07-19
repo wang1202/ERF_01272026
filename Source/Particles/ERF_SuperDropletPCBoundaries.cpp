@@ -32,6 +32,10 @@ void SuperDropletPC::applyBoundaryTreatment ( int                   a_lev,
     auto multiplicity = (num_sd_per_cell > 0 ? num_par_per_cell / num_sd_per_cell : zero);
 
     Long num_deactivated_particles = 0;
+    // Aggregate boundary exits across all particle tiles before doing the
+    // single host copy and MPI reduction below.
+    Gpu::Buffer<Long> deactivated_particles({0});
+    auto* deactivated_particles_ptr = deactivated_particles.data();
 
     forEachParticleTile(a_lev, proc_ctx,
         [&](ParIterType& /*pti*/, int grid, ParticleType* p_pbox,
@@ -40,9 +44,6 @@ void SuperDropletPC::applyBoundaryTreatment ( int                   a_lev,
     {
         auto zheight = (*z_height)[grid].array();
         const auto zheight_box = (*z_height)[grid].box();
-
-        Gpu::Buffer<Long> deactivated_particles({0});
-        auto* deactivated_particles_ptr = deactivated_particles.data();
 
         ParallelFor(ptrs.num_particles, [=] AMREX_GPU_DEVICE (int i)
         {
@@ -174,11 +175,12 @@ void SuperDropletPC::applyBoundaryTreatment ( int                   a_lev,
         });
         if (a_report_diagnostics) {
             Gpu::synchronize();
-            num_deactivated_particles += *(deactivated_particles.copyToHost());
         }
     }); // end forEachParticleTile
 
     if (a_report_diagnostics) {
+        Gpu::synchronize();
+        num_deactivated_particles = *(deactivated_particles.copyToHost());
         ParallelDescriptor::ReduceLongSum( &num_deactivated_particles, 1 );
         Print() << "SuperDropletPC(" << m_name << "): "
                 << "deactivated " << num_deactivated_particles << " super-droplets at boundaries.\n";

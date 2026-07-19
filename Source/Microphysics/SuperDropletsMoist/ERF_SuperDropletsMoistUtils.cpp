@@ -358,6 +358,12 @@ void SuperDropletsMoist::AverageDownMicroVars (const int finest_level)
 void SuperDropletsMoist::Update_State_Vars (MultiFab& a_cons_vars, const MultiFab& a_z_phys_nd)
 {
     BL_PROFILE("SuperDropletsMoist::Update_State_Vars()");
+    if (!m_particles_activated) {
+        // Copy_State_to_Micro already captured the dycore-advected q_v/q_c/q_r.
+        // Leave those Eulerian values untouched until particles are present.
+        amrex::ignore_unused(a_cons_vars, a_z_phys_nd);
+        return;
+    }
     computeQcQrWater(a_z_phys_nd);
     computeQtWater();
     rainAccumulation(a_z_phys_nd);

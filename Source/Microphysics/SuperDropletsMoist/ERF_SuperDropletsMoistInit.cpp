@@ -222,7 +222,9 @@ void SuperDropletsMoist::InitParticles ( const int a_lev, MFPtr& a_z_phys_nd )
 {
     BL_PROFILE("SuperDropletsMoist::InitParticles()");
 
-    m_super_droplets->InitializeParticles(a_lev, zero, a_z_phys_nd);
+    int particles_added = m_super_droplets->InitializeParticles(a_lev, zero, a_z_phys_nd) ? 1 : 0;
+    ParallelDescriptor::ReduceIntMax(particles_added);
+    m_particles_activated = m_particles_activated || (particles_added != 0);
 
     if (m_init_type != SDMoistInit::condensate_density) {
         amrex::Print() << "Initialized "
@@ -256,6 +258,18 @@ void SuperDropletsMoist::RestartParticles ( ParGDBBase* /* a_gdb */, const std::
 #endif
     m_super_droplets->Restart(a_fname, m_name);
     m_super_droplets->Redistribute();
+
+    int particles_present = 0;
+    for (int lev = 0; lev <= m_super_droplets->finestLevel(); ++lev) {
+        particles_present = std::max(particles_present,
+                                     m_super_droplets->NumberOfParticlesAtLevel(lev) > 0 ? 1 : 0);
+    }
+    ParallelDescriptor::ReduceIntMax(particles_present);
+    m_particles_activated = (particles_present != 0);
+    if (!m_particles_activated) {
+        amrex::Warning("SuperDropletsMoist restart contains no particles; SDM particle physics "
+                       "will remain inactive until a configured injection creates particles.");
+    }
 #ifndef _WIN32
     gettimeofday(&total_end,NULL);
     long long total_wtime;
@@ -298,9 +312,11 @@ void SuperDropletsMoist::FinishInit (const int& /* a_lev */,
 {
     BL_PROFILE("SuperDropletsMoist::FinishInit()");
     const int lev = 0; // FinishInit is called for level 0 only
-    m_super_droplets->DensityScaling(*(m_mic_fab_vars[lev][MicVar_SD::rho]));
+    if (m_particles_activated) {
+        m_super_droplets->DensityScaling(*(m_mic_fab_vars[lev][MicVar_SD::rho]));
+    }
 
-    if (m_init_type == SDMoistInit::condensate_density) {
+    if (m_particles_activated && m_init_type == SDMoistInit::condensate_density) {
 
         /* initial super-droplets attributes computed from condensate mass density */
         MultiFab rho_c ( m_mic_fab_vars[lev][MicVar_SD::q_c]->boxArray(),
@@ -317,13 +333,17 @@ void SuperDropletsMoist::FinishInit (const int& /* a_lev */,
                        << m_super_droplets->TotalNumberOfParticles()
                        << " particles in super-droplets moisture model.\n";
 
-    } else {
+    } else if (m_particles_activated) {
 
         /* call the phase change function so that the super-droplets "relax" to their
          * physical size corresponding to the initial flow */
         if (m_flag_phase_change && m_init_phase_change) {
             phaseChange(m_init_phase_change_time, a_z_phys_nd, lev);
         }
+    }
+
+    if (!m_particles_activated) {
+        return;
     }
 
     computeQcQrWater(*a_z_phys_nd[lev]);
@@ -357,7 +377,10 @@ void SuperDropletsMoist::FinishInit (const int& /* a_lev */,
         }
     }
 
-    m_super_droplets->Diagnostics(-1, lev, zero, (m_diagnostics_iter>0));
+    const bool do_diagnostics = (m_diagnostics_iter > 0);
+    if (do_diagnostics) {
+        m_super_droplets->Diagnostics(-1, lev, zero, true);
+    }
 
     return;
 }

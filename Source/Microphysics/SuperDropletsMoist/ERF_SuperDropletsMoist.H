@@ -179,6 +179,9 @@ class SuperDropletsMoist : public NullMoistLagrangian {
         /*! \brief Get the diagnostics interval */
         int getDiagnosticsInterval () const override { return m_diagnostics_iter; }
 
+        /*! \brief Whether the particle population has been activated */
+        bool particlesActivated () const { return m_particles_activated; }
+
         /*! \brief Ensure m_mic_fab_vars[lev] is allocated for the given level */
         void EnsureMicFabVars (const int a_lev, const amrex::MultiFab& a_cons_vars);
 
@@ -491,6 +494,11 @@ class SuperDropletsMoist : public NullMoistLagrangian {
 
         /*! recycle particles */
         bool m_recycle_particles;
+
+        /*! True once an initial population or a successful injection exists. */
+        bool m_particles_activated = false;
+        /*! Warn once when restart/injection activates over Eulerian condensate. */
+        bool m_activation_condensate_warning_issued = false;
 
         /*! species index of water */
         int m_idx_w;

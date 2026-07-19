@@ -155,15 +155,16 @@ class SuperDropletPC : public ERFPC
                                      const int ) const override;
 
         /*! \brief Initialize super-droplets in domain at AMR level a_lev */
-        void InitializeParticles (const int a_lev, const double a_t, const MFPtr& a_ptr);
+        bool InitializeParticles (const int a_lev, const double a_t, const MFPtr& a_ptr);
 
         using ERFPC::InitializeParticles;
 
         /*! \brief Inject super-droplets in domain */
-        virtual void InjectParticles (const double, const MFPtr& a_ptr, const double);
+        virtual bool InjectParticles (const double, const MFPtr& a_ptr, const double,
+                                      bool a_check_activation);
 
         /*! \brief add particles for a given set of initialization parameters */
-        void addParticles ( int a_lev, const MFPtr&, const SDInitProperties& );
+        bool addParticles ( int a_lev, const MFPtr&, const SDInitProperties& );
 
         /*! \brief Set initial number of superdroplets per cell as a box with uniform density */
         void setNumSDBoxDistribution( int a_lev,

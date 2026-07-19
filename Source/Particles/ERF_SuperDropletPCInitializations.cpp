@@ -343,7 +343,7 @@ void SuperDropletPC::define (  const std::vector<Species::Name>& a_species_mat,
 }
 
 /*! Initialize the particles at AMR level a_lev */
-void SuperDropletPC::InitializeParticles (const int a_lev, const double a_t, const MFPtr& a_ptr)
+bool SuperDropletPC::InitializeParticles (const int a_lev, const double a_t, const MFPtr& a_ptr)
 {
     amrex::ignore_unused(a_t);
     BL_PROFILE("SuperDropletPC::InitializeParticles()");
@@ -394,6 +394,7 @@ void SuperDropletPC::InitializeParticles (const int a_lev, const double a_t, con
 
     Print() << "SuperDropletPC(" << m_name << ") InitializeParticles at level " << a_lev << ":\n";
 
+    bool particles_added = false;
     for (int i = 0; i < m_num_initializations; i++) {
         Print() << "  SuperDropletPC(" << m_name << ") Initialization";
         if (m_num_initializations > 1) { Print() << " " << i; }
@@ -401,7 +402,7 @@ void SuperDropletPC::InitializeParticles (const int a_lev, const double a_t, con
         if (a_lev == 0) {
             m_initializations[i]->printParameters(m_species_mat, m_aerosol_mat);
         }
-        addParticles( a_lev, a_ptr, *(m_initializations[i]) );
+        particles_added = addParticles( a_lev, a_ptr, *(m_initializations[i]) ) || particles_added;
         Print() << "  Particle container size (level " << a_lev << "): "
                 << NumberOfParticlesAtLevel(a_lev) << "\n";
     }
@@ -415,24 +416,38 @@ void SuperDropletPC::InitializeParticles (const int a_lev, const double a_t, con
             m_injections[i]->printParameters(m_species_mat, m_aerosol_mat);
         }
     }
+    return particles_added;
 }
 
 /*! Inject particles */
-void SuperDropletPC::InjectParticles (const double a_t, const MFPtr& a_ptr, const double a_dt)
+bool SuperDropletPC::InjectParticles (const double a_t, const MFPtr& a_ptr, const double a_dt,
+                                      const bool a_check_activation)
 {
-    amrex::ignore_unused(a_t);
+    bool injection_attempted = false;
+    bool particles_created = false;
 
     for (int i = 0; i < m_num_injections; i++) {
         m_injections[i]->updateDt(a_dt);
         if (    (m_injections[i]->m_inj_rate > 0)
              && (a_t >= m_injections[i]->m_tstart)
              && (a_t <= m_injections[i]->m_tstop) ) {
+            injection_attempted = true;
             Print() << "SuperDropletPC(" << m_name << "): "
                     << " injecting particles (" << i << ").\n";
-            addParticles( 0, a_ptr, *(m_injections[i]) );
+            particles_created = addParticles( 0, a_ptr, *(m_injections[i]) ) || particles_created;
             Print() << "    Particle container size: " << NumSuperDroplets() << "\n";
         }
     }
+
+    // Activation is checked only while the container is still particle-free.
+    // This is a single Boolean reduction per attempted injection, never a
+    // particle-count reduction on every SDM timestep.
+    if (a_check_activation && injection_attempted) {
+        int created = particles_created ? 1 : 0;
+        ParallelDescriptor::ReduceIntMax(created);
+        particles_created = (created != 0);
+    }
+    return particles_created;
 }
 
 /*! Set super-droplets multiplicity and radius in the domain from a given condensate mass density:

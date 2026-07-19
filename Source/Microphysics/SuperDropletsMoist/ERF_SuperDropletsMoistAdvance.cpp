@@ -38,14 +38,42 @@ void SuperDropletsMoist::Advance ( const Real& a_dt,
     // Current level (set by wrapper)
     const int current_lev = m_current_lev;
     const int lev = m_current_lev;
+    const bool particles_were_active = m_particles_activated;
 
     // Inject particles on level 0 only
     if (current_lev == 0) {
-        m_super_droplets->InjectParticles(a_time, a_z[0], m_dt);
+        if (m_super_droplets->InjectParticles(a_time, a_z[0], m_dt,
+                                              !m_particles_activated)) {
+            m_particles_activated = true;
+        }
+
+        if (!particles_were_active && m_particles_activated &&
+            !m_activation_condensate_warning_issued) {
+            Real max_condensate = std::max(
+                m_mic_fab_vars[0][MicVar_SD::q_c]->max(0),
+                m_mic_fab_vars[0][MicVar_SD::q_r]->max(0));
+            ParallelDescriptor::ReduceRealMax(max_condensate);
+            if (max_condensate > zero) {
+                amrex::Warning(
+                    "SuperDropletsMoist: activating injected particles while Eulerian "
+                    "condensate is nonzero; existing q_c/q_r are not converted to particles.");
+            }
+            m_activation_condensate_warning_issued = true;
+        }
     }
 
-    // Print diagnostics once per iteration (level 0)
-    if (current_lev == 0) {
+    // Before the first successful injection/initialization, the Eulerian
+    // moisture state is authoritative.  In particular, do not replace q_c or
+    // q_r with a zero particle deposition and do not run any particle physics.
+    if (!m_particles_activated) {
+        return;
+    }
+
+    const bool do_diagnostics =
+        (m_diagnostics_iter > 0) && (((a_iter + 1) % m_diagnostics_iter) == 0);
+
+    // Print diagnostics once per diagnostic interval (level 0)
+    if (current_lev == 0 && do_diagnostics) {
         auto num_particles = m_super_droplets->TotalNumberOfParticles();
         auto num_SD = m_super_droplets->NumSuperDroplets();
         auto num_SD_inactive = m_super_droplets->NumSDDeactivated();

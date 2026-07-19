@@ -190,7 +190,7 @@ void SuperDropletPC::setNumSDBubbleDistribution ( int a_lev,
     + The number of super-droplets per cell is computed from the super-droplet number;
       if specified (if not specified, it is set to the particles per cell, whose default value is 1).
 */
-void SuperDropletPC::addParticles ( int a_lev,
+bool SuperDropletPC::addParticles ( int a_lev,
                                     const MFPtr& a_height_ptr, /*!< terrain */
                                     const SDInitProperties& a_init /*!< initialization parameters */ )
 {
@@ -213,8 +213,8 @@ void SuperDropletPC::addParticles ( int a_lev,
     Print() << "    Number of physical particles per cell: " << num_par_per_cell << "\n"
             << "    Number of super droplets per cell: " << num_sd_per_cell << "\n";
 
-    if (num_par_per_cell == 0) { return; }
-    if (num_sd_per_cell == 0) { return; }
+    if (num_par_per_cell == 0) { return false; }
+    if (num_sd_per_cell == 0) { return false; }
 
     const int num_sp  = m_num_species;
     const int num_ae = m_num_aerosols;
@@ -256,6 +256,7 @@ void SuperDropletPC::addParticles ( int a_lev,
                        1, 0 );
     offsets.setVal(0);
 
+    Long num_added = 0;
     for(MFIter mfi = MakeMFIter(a_lev); mfi.isValid(); ++mfi) {
         const Box& tile_box  = mfi.tilebox();
 
@@ -270,6 +271,7 @@ void SuperDropletPC::addParticles ( int a_lev,
                                        Scan::Type::exclusive,
                                        Scan::retSum );
         }
+        num_added += np;
         auto offset_arr = offsets[mfi].array();
 
         auto& particle_tile = DefineAndReturnParticleTile(a_lev, mfi);
@@ -516,7 +518,7 @@ void SuperDropletPC::addParticles ( int a_lev,
         Gpu::synchronize();
     }
 
-    return;
+    return (num_added > 0);
 }
 
 #endif

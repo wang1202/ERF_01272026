@@ -1,13 +1,13 @@
 # ------------------  INPUTS TO MAIN PROGRAM  -------------------
 # CloudChamber test case: enclosed box with wall heat/moisture exchange
-stop_time = 370.
+stop_time = 3600.
 
 amrex.fpe_trap_invalid = 1
-
+amrex.use_gpu_aware_mpi = 1
+erf.use_fft = 1
 erf.anelastic = 1
-erf.prob_name = "CloudChamber"
-
 erf.init_type = "uniform"
+erf.prob_name = "cloudchamber"
 
 fabarray.mfiter_tile_size = 1024 1024 1024
 
@@ -15,6 +15,8 @@ fabarray.mfiter_tile_size = 1024 1024 1024
 geometry.prob_lo = -1. -1.  0.
 geometry.prob_hi =  1.  1.  1.
 amr.n_cell       = 64 64 32
+amr.max_grid_size = 64
+amr.blocking_factor = 32
 
 geometry.is_periodic = 0 0 0
 
@@ -30,9 +32,11 @@ erf.cfl            = 0.7
 erf.dt_max_initial = 0.025
 
 # DIAGNOSTICS & VERBOSITY
-erf.sum_interval   = 1       # timesteps between computing mass
-erf.v              = 1       # verbosity in ERF.cpp
-amr.v              = 1       # verbosity in Amr.cpp
+erf.sum_interval   = 0       # timesteps between computing mass
+erf.v              = 0       # verbosity in ERF.cpp
+amr.v              = 0       # verbosity in Amr.cpp
+erf.data_log       = "surf" "mean" "flux" "subgrid"
+erf.profile_int    = 100     # (every minute with dt = 0.075)
 
 # REFINEMENT / REGRIDDING
 amr.max_level       = 0       # maximum level number allowed
@@ -44,41 +48,73 @@ erf.check_int       = 1000       # number of timesteps between checkpoints
 # PLOTFILES
 erf.plot_file_1     = plt        # prefix of plotfile name
 erf.plot_int_1      = 100        # number of timesteps between plotfiles
-erf.plot_vars_1     = density x_velocity y_velocity z_velocity pressure temp theta
+erf.plot_vars_1     = density rhotheta x_velocity y_velocity z_velocity pressure temp theta qt qv qc qsat qrain rel_humidity rain_accum condensation_rate super_droplets_moisture_number_density super_droplets_moisture_sd_number_density super_droplets_moisture_mass_density super_droplets_moisture_radius  
+
+# Enable particle output for visualization of individual droplets
+particles.disable_plt = false
 
 erf.use_gravity = true
 
 # SOLVER CHOICE
-erf.molec_diff_type  = "None"
-erf.alpha_T = 0.0
-erf.alpha_C = 0.0
+erf.molec_diff_type  = "Constant"
+erf.dynamic_viscosity = 1.717e-5
+erf.alpha_T = 1.951e-5
+erf.alpha_C = 2.265e-5
+   
+erf.dycore_horiz_adv_type    = WENOZ5
+erf.dycore_vert_adv_type     = WENOZ5
+erf.dryscal_horiz_adv_type   = WENOZ5
+erf.dryscal_vert_adv_type    = WENOZ5
+erf.moistscal_horiz_adv_type = WENOZ5
+erf.moistscal_vert_adv_type  = WENOZ5
 
-erf.les_type  = "Smagorinsky"
-erf.Cs        = 0.1
-erf.Pr_t      = 0.33333333333333
+erf.les_type        = "Smagorinsky"
+erf.Cs              = 0.175
 
-# MOISTURE CONFIGURATION
-erf.moisture_model = SatAdj
+#erf.les_type = "Deardorff"
+#erf.Ck       = 0.1
+#erf.sigma_k  = 1.0
+#erf.Ce       = 0.1
+
+erf.Pr_t      = 0.371
+erf.Sc_t      = 0.377
 
 # PROBLEM PARAMETERS (Thermodynamic targets)
-prob.T_0  = 285.0      # K
-prob.p_0  = 101325.0   # Pa
-prob.rh_0 = 1.0        # unitless (0-1). Use 1.0 for exactly saturated, qc=0.
+prob.p_inf = 100000.0  # Pa; reference pressure used to derive rho_0 = p_inf/(R_d*T_0), giving p_hse=1e5 and pi0=1
+prob.T_0  = 285.0      # K absolute temperature (converted to theta via T_0_is_temperature)
+prob.T_0_is_temperature = 1  # interpret prob.T_0 as temperature, not potential temperature
+prob.p_0  = 100000.0   # Pa (for qsat calculation in UserDefined init)
+prob.rh_0 = 1.0       # unitless (0–1). Use 1.0 for exactly saturated, qc=0.
 
 # Mean wind and small velocity noise to seed turbulence
 prob.U_0 = 0.0
 prob.V_0 = 0.0
 prob.W_0 = 0.0
-prob.U_0_Pert_Mag = 0.05  # m/s
-prob.V_0_Pert_Mag = 0.05
-prob.W_0_Pert_Mag = 0.05
+prob.U_0_Pert_Mag = 0.1  # m/s
+prob.V_0_Pert_Mag = 0.1
+prob.W_0_Pert_Mag = 0.00
+prob.T_0_Pert_Mag = 0.1
 
-# WALL FLUX CONFIGURATION
-erf.use_wall_fluxes = true
+# MOISTURE MODEL - Super Droplet Method
+erf.moisture_model  = "SuperDroplets"
+erf.buoyancy_type = 4
+
+# Ad-hoc multi-box scalar-conservation correction for rho*theta and total water (RhoQ1/q_t).
+# 1.0 = full correction (default), 0.0 = OFF (reproduces the multi-box conservation leak),
+# in-between = partial. See Docs/multibox_conservation_stopgap.md.
+erf.conservation_fix_coeff = 0.0
 
 # Wall flux parameters - all faces, momentum drag model
 wallflux.enable = true
-wallflux.water_coated = true
+
+# Per-face wetness (0.0 = dry, 1.0 = fully saturated)
+# Wetness controls moisture flux: q_wall = wetness * q_sat(T_wall, p)
+wallflux.wetness.xlo = 1.0  # Fully saturated left wall
+wallflux.wetness.xhi = 1.0  # Fully saturated right wall
+wallflux.wetness.ylo = 1.0  # Fully saturated front wall
+wallflux.wetness.yhi = 1.0  # Fully saturated back wall
+wallflux.wetness.zlo = 1.0  # Fully saturated bottom wall
+wallflux.wetness.zhi = 1.0  # Partially dry top wall (50% wetness)
 
 # Momentum model for all faces - drag mode
 wallflux.momentum_model.xlo = "drag"
@@ -88,34 +124,220 @@ wallflux.momentum_model.yhi = "drag"
 wallflux.momentum_model.zlo = "drag"
 wallflux.momentum_model.zhi = "drag"
 
-# Drag coefficients (same for all faces to start)
-wallflux.Cm.xlo = 0.0318
-wallflux.Cm.xhi = 0.0318
-wallflux.Cm.ylo = 0.0318
-wallflux.Cm.yhi = 0.0318
-wallflux.Cm.zlo = 0.0318
-wallflux.Cm.zhi = 0.0318
+## For dx = 3.125 cm
+#cm = 0.0318
+#ch = 0.0335
+#cq = 0.0372
+#cm_sw = 0.0443
+#ch_sw = 0.0308
+#cq_sw = 0.0343
+## For dx = 6.125 cm
+#cm = 0.0299
+#ch = 0.0289
+#cq = 0.0318
+#cm_sw = 0.0458
+#ch_sw = 0.0260
+#cq_sw = 0.0291
+
+# Enable wall flux diagnostics and set output interval
+erf.use_wall_fluxes = true
+erf.wallflux_diagnostics = true
+erf.wallflux_output_interval = 100
+
+# === dx=3.125 cm | all cases | with molecular ===
+# Drag coefficients
+wallflux.Cm.xlo = 0.023474
+wallflux.Cm.xhi = 0.023474
+wallflux.Cm.ylo = 0.023474
+wallflux.Cm.yhi = 0.023474
+wallflux.Cm.zlo = 0.015511
+wallflux.Cm.zhi = 0.015511
 
 # Heat exchange coefficients
-wallflux.Ch.xlo = 0.0335
-wallflux.Ch.xhi = 0.0335
-wallflux.Ch.ylo = 0.0335
-wallflux.Ch.yhi = 0.0335
-wallflux.Ch.zlo = 0.0335
-wallflux.Ch.zhi = 0.0335
+wallflux.Ch.xlo = 0.015261
+wallflux.Ch.xhi = 0.015261
+wallflux.Ch.ylo = 0.015261
+wallflux.Ch.yhi = 0.015261
+wallflux.Ch.zlo = 0.019916
+wallflux.Ch.zhi = 0.019916
 
 # Moisture exchange coefficients
-wallflux.Cq.xlo = 0.0372
-wallflux.Cq.xhi = 0.0372
-wallflux.Cq.ylo = 0.0372
-wallflux.Cq.yhi = 0.0372
-wallflux.Cq.zlo = 0.0372
-wallflux.Cq.zhi = 0.0372
+wallflux.Cq.xlo = 0.016639
+wallflux.Cq.xhi = 0.016639
+wallflux.Cq.ylo = 0.016639
+wallflux.Cq.yhi = 0.016639
+wallflux.Cq.zlo = 0.021606
+wallflux.Cq.zhi = 0.021606
 
 # Wall temperatures (in Kelvin) - different for each face
-wallflux.T_wall.xlo = 285.0  # neutral left wall
-wallflux.T_wall.xhi = 285.0  # neutral right wall
-wallflux.T_wall.ylo = 285.0  # neutral front wall
-wallflux.T_wall.yhi = 285.0  # neutral back wall
-wallflux.T_wall.zlo = 295.0  # warm bottom wall
-wallflux.T_wall.zhi = 275.0  # cool top wall
+wallflux.T_wall.xlo = 288.0  # cooler left wall
+wallflux.T_wall.xhi = 288.0  # warmer right wall
+wallflux.T_wall.ylo = 288.0  # neutral front wall
+wallflux.T_wall.yhi = 288.0  # neutral back wall
+wallflux.T_wall.zlo = 294.0  # warm bottom wall
+wallflux.T_wall.zhi = 282.0  # cool top wall
+
+# ========== SUPER DROPLET METHOD PARAMETERS ==========
+# Core SDM settings
+super_droplets_moisture.initial_distribution_type = "uniform"
+super_droplets_moisture.diagnostics_interval = 10000
+super_droplets_moisture.include_phase_change = true
+super_droplets_moisture.include_advection = true
+super_droplets_moisture.include_coalescence = false
+
+# ========== BOUNDARY-DEPOSITION WALL LOSS (super-droplets) ==========
+# First-order absorbing-boundary sink applied to super-droplets in cells
+# adjacent to chamber boundaries (4 side walls + top + bottom):
+#     k_total(r) = sum_b vd_b(r) * A_b / V_cell ,  xi_new = xi_old*exp(-k_total*dt)
+# Diagnostics are written to "super_droplets_moisture_wall_loss.txt".
+# See Source/Particles/SDWallLoss.md for the full description.
+super_droplets_moisture.wall_loss.enable = true
+
+# (1) on/off is the line above.
+# (2) Removal method: "deterministic" (xi*exp(-k*dt)) or "stochastic" (binomial thinning)
+super_droplets_moisture.wall_loss.method = deterministic
+
+# (3) Remove super-droplets whose multiplicity decays below the threshold
+#     (remaining multiplicity is counted as deposited, mass-conserving)
+super_droplets_moisture.wall_loss.deactivate_on_depletion = true
+super_droplets_moisture.wall_loss.deactivate_threshold = 1.0   # physical particles
+
+# (4) Turbulent deposition-velocity model: "constant" or "diffusion" (Stokes-Einstein)
+super_droplets_moisture.wall_loss.deposition_velocity_model = constant
+# Per-boundary turbulent deposition velocities [m/s]
+super_droplets_moisture.wall_loss.vd_side   = 1.0e-3
+super_droplets_moisture.wall_loss.vd_top    = 1.0e-3
+super_droplets_moisture.wall_loss.vd_bottom = 1.0e-3
+# Optional gravitational settling correction (vd_top -= v_settle, vd_bottom += v_settle;
+# v_settle = the super-droplet terminal velocity)
+super_droplets_moisture.wall_loss.settling_correction = true
+
+# Size-resolved deposition diagnostics (log-spaced bins) + output cadence
+super_droplets_moisture.wall_loss.num_bins  = 16
+super_droplets_moisture.wall_loss.bin_rmin  = 1.0e-8
+super_droplets_moisture.wall_loss.bin_rmax  = 1.0e-4
+super_droplets_moisture.wall_loss.diag_interval = 100   # steps between diagnostic writes
+
+# Domain-averaged time series output
+# Outputs: time, temperature, RH, mean radius, number concentration, LWC
+super_droplets_moisture.domain_timeseries_interval = 800  # Output every 10 iterations
+super_droplets_moisture.domain_timeseries_radius_cutoff = 1.0e-6  # 1 micron cutoff (default)
+
+# ========== AEROSOL INJECTION (Alternative to Recycling) ==========
+# Inject fresh aerosols at a specific location with a controlled rate
+# This is more physically realistic than recycling for representing sources
+
+# Choose multiplicity type
+# super_droplets_moisture.multiplicity_type = "sampled"  # or "constant"
+super_droplets_moisture.multiplicity_type = "constant"
+
+# Number of injection sources (can have multiple)
+super_droplets_moisture.num_injections = 1
+
+# Injection source 0 configuration
+super_droplets_moisture.injection.0.rate = 3355443200   # Physical particles per m³ per second
+super_droplets_moisture.injection.0.particles_per_cell = 128 # Injected particles per cell (computational particles, not physical)
+#super_droplets_moisture.injection.0.interval = 160           # Inject every 40 timesteps, with this setting multiplicity should be 7.6
+super_droplets_moisture.injection.0.t_start = 1200.0       # Start injection at t=120 seconds
+super_droplets_moisture.injection.0.t_stop = 1.0e10        # Continue throughout simulation
+
+# Injection region type: "uniform" (box) or "bubble" (sphere)
+super_droplets_moisture.injection.0.distribution_type = "uniform"
+
+# For uniform: cubic injection volume centered at (0, 0, 0.5)
+# Box extends from (x-0.005, y-0.005, z-0.495) to (x+0.005, y+0.005, z+0.505)
+super_droplets_moisture.injection.0.particle_box_lo = -0.0625  -0.0625  0.46875      # meters
+super_droplets_moisture.injection.0.particle_box_hi = 0.0625  0.0625  0.53125  # meters
+super_droplets_moisture.place_randomly_in_cells = true
+
+# Alternative: For bubble (spherical) injection, use these instead:
+# super_droplets_moisture.injection.distribution_type = "bubble"
+# super_droplets_moisture.injection.particle_bubble_center = 0.0 0.0 0.1  # Center (x,y,z) in meters
+# super_droplets_moisture.injection.particle_bubble_radius = 0.1 0.1 0.05  # Radii (rx,ry,rz) in meters
+
+# Aerosol properties for injected particles
+# Note: aerosols defined at main level (line 253), not here
+
+# Aerosol distribution for injected particles
+super_droplets_moisture.injection.0.aerosol_distribution_type_NaCl = "mass_constant"
+super_droplets_moisture.injection.0.aerosol_mean_mass_NaCl = 2.21e-18
+
+# Initial velocity of injected particles (m/s) - useful for directed sources
+# NOTE: domain_velocity moves the INJECTION REGION, not the particle velocities!
+# Setting this to non-zero will move the injection box over time.
+# For a stationary injection region, use 0 0 0
+super_droplets_moisture.injection.0.domain_velocity = 0.0 0.0 0.0  # Stationary injection region
+
+# Coalescence kernel (options: "Halls", "Golovin", "Long", or "None")
+super_droplets_moisture.coalescence_kernel = "Halls"
+
+# Advection settings
+super_droplets_moisture.prescribed_advection = false
+super_droplets_moisture.density_scaling = false
+super_droplets_moisture.advect_with_flow = true
+super_droplets_moisture.advect_with_gravity = true
+super_droplets_moisture.dimensionality = "three_d"  # Full 3D chamber
+
+# ========== PARTICLE MANAGEMENT: Choose INJECTION or RECYCLING ==========
+#
+# OPTION 1: INJECTION (Recommended - more physically realistic)
+#   - Continuously inject fresh aerosols at specific location(s)
+#   - Control injection rate, location, and timing
+#   - See "AEROSOL INJECTION" section above for configuration
+#   - Particles hitting walls are permanently removed
+#
+# OPTION 2: RECYCLING (Alternative - maintains constant particle count)
+#   - Particles hitting walls are reset to dry aerosols and repositioned
+#   - Maintains fixed number of computational particles
+#   - Less physically realistic but computationally efficient
+#
+# Enable recycling (set to false if using injection above)
+super_droplets_moisture.recycle_particles = false
+
+# Recycling configuration (only used if recycle_particles = true)
+super_droplets_moisture.recycle_box_lo = -1.0 -1.0 0.0
+super_droplets_moisture.recycle_box_hi =  1.0  1.0 0.1
+
+# Aerosol species and distribution
+super_droplets_moisture.species = water
+super_droplets_moisture.aerosols = NaCl
+
+# No initial distribution (using injection only)
+super_droplets_moisture.num_initializations = 0
+
+# NaCl aerosol distribution FOR INITIALIZATION (not used since num_initializations=0)
+# super_droplets_moisture.initial_aerosol_distribution_type_NaCl = "mass_exponential"
+# super_droplets_moisture.initial_aerosol_min_mass_NaCl = 1.0e-22   # kg (very small nuclei)
+# super_droplets_moisture.initial_aerosol_mean_mass_NaCl = 1.0e-19  # kg (typical CCN)
+
+# Alternative: Use log-normal radius distribution (comment out mass_exponential above and uncomment these)
+# super_droplets_moisture.initial_aerosol_distribution_type_NaCl = "radius_log_normal"
+# super_droplets_moisture.initial_aerosol_mean_radius_NaCl = 80.0e-9  # m (80 nm)
+# super_droplets_moisture.initial_aerosol_min_radius_NaCl = 1e-9      # m (1 nm)
+# super_droplets_moisture.initial_aerosol_max_radius_NaCl = 5e-6      # m (5 microns)
+# super_droplets_moisture.initial_aerosol_std_radius_NaCl = 0.146     # standard deviation
+
+# Particle density and number
+# super_droplets_moisture.initial_number_density = 1.0e7           # m^-3 (10 million droplets/m³)
+# super_droplets_moisture.initial_particles_per_cell = 256         # computational particles per cell
+super_droplets_moisture.initial_number_density = 0.0           # m^-3 (10 million droplets/m³)
+
+# Phase change solver settings (for condensation/evaporation)
+super_droplets_moisture.num_substeps_phase_change = 1
+super_droplets_moisture.initial_phase_change_relaxation = false
+# super_droplets_moisture.initial_phase_change_relaxation_time = 10.0  # seconds
+
+# Terminal velocity model (options: "RogersYau", "Beard", "KhvorostyanovCurry")
+super_droplets_moisture.terminal_velocity_model = "RogersYau"
+
+# Newton solver for implicit integration (if needed)
+super_droplets_moisture.newton_solver_tolerance = 1.0e-6
+super_droplets_moisture.newton_solver_rtol = 1.0e-6
+super_droplets_moisture.newton_solver_max_iterations = 20
+super_droplets_moisture.newton_solver_maxits = 20
+
+# Brownian coalescence (typically small effect, can disable for performance)
+super_droplets_moisture.include_brownian_coalescence = false
+
+
+

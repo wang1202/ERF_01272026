@@ -341,6 +341,13 @@ ERF::FillIntermediatePatch (int lev, double time_d,
                           ngvect_vels,time,BCVars::yvel_bc, do_fb);
         (*physbcs_w[lev])(*mfs_vel[Vars::zvel],*mfs_vel[Vars::xvel],*mfs_vel[Vars::yvel],
                           ngvect_vels,time,BCVars::zvel_bc, do_fb);
+
+        // FillBoundary updates ghost cells but does not reconcile duplicated valid
+        // faces at grid boundaries.  Keep one value per logical face before these
+        // stage velocities are used by wall fluxes or converted back to momentum.
+        mfs_vel[Vars::xvel]->OverrideSync(Geom(lev).periodicity());
+        mfs_vel[Vars::yvel]->OverrideSync(Geom(lev).periodicity());
+        mfs_vel[Vars::zvel]->OverrideSync(Geom(lev).periodicity());
     }
     // ***************************************************************************
 

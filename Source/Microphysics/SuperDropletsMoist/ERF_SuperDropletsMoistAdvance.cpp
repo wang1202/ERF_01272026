@@ -131,7 +131,7 @@ void SuperDropletsMoist::Advance ( const Real& a_dt,
                                             do_diagnostics );
     }
 
-    // Size-dependent loss of super-droplets to the (lateral) side walls.
+    // Size-dependent loss of super-droplets to chamber walls.
     // No-op unless super_droplets.wall_loss.enable = true.
     m_super_droplets->WallLoss( current_lev, a_dt, a_time, a_iter, a_bc );
 

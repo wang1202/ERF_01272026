@@ -17,9 +17,9 @@ using namespace SDPCDefn;
 
 /*! \brief Apply the boundary-surface deposition sink to all chamber boundaries.
  *
- *  For every active super-droplet in a cell adjacent to an absorbing chamber
- *  boundary, the multiplicity is reduced by the total first-order loss across
- *  all boundary faces the cell touches:
+ *  The physical face-flux models act on active super-droplets in cells adjacent
+ *  to absorbing chamber boundaries.  The multiplicity is reduced by the total
+ *  first-order loss across all boundary faces the cell touches:
  *
  *      k_total(r) = sum_b vd_b(r) * A_b / V_cell
  *      P_loss(r)  = 1 - exp(-k_total(r) * dt)
@@ -27,8 +27,11 @@ using namespace SDPCDefn;
  *  with boundary-specific deposition velocities (side / top / bottom), an
  *  optional gravitational settling correction on the top/bottom faces, and the
  *  removal applied either deterministically (Option A) or by stochastic thinning
- *  (Option B).  Optionally deactivates super-droplets whose multiplicity decays
- *  below a threshold (their remaining multiplicity is counted as deposited).
+ *  (Option B).  The chamber-calibrated measured-rate model instead applies its
+ *  first-order k(Dp,t) to every suspended super-droplet, matching the well-mixed
+ *  assumption used to infer size-resolved rates from seed-only experiments.
+ *  Optionally deactivates super-droplets whose multiplicity decays below a
+ *  threshold (their remaining multiplicity is counted as deposited).
  *
  *  See ERF_SDWallLoss.H for the formulation and references.
  */
@@ -73,6 +76,24 @@ void SuperDropletPC::WallLoss ( const int        a_lev,
     const Real A_zface = ctx.dx[0] * ctx.dx[1]; // z-normal (top/bottom)
     const Real V_cell  = ctx.cell_volume;
 
+    // Whole-chamber wall areas used only to attribute measured-profile losses.
+    // A measured k(Dp) already combines all deposition mechanisms; without
+    // surface-resolved measurements, area weighting is the neutral diagnostic
+    // partition consistent with Lai's enclosure-scale balance.
+    const Real Lx = ctx.phi[0] - ctx.plo[0];
+    const Real Ly = ctx.phi[1] - ctx.plo[1];
+    const Real Lz = ctx.phi[2] - ctx.plo[2];
+    const Real A_side_total = (Real(wall_xlo) + Real(wall_xhi)) * Ly * Lz
+                            + (Real(wall_ylo) + Real(wall_yhi)) * Lx * Lz;
+    const Real A_top_total = wall_zhi ? Lx * Ly : Real(0.0);
+    const Real A_bot_total = wall_zlo ? Lx * Ly : Real(0.0);
+    const Real A_wall_total = A_side_total + A_top_total + A_bot_total;
+    const Real measured_side_fraction = A_side_total / A_wall_total;
+    const Real measured_top_fraction  = A_top_total  / A_wall_total;
+    const Real measured_bot_fraction  = A_bot_total  / A_wall_total;
+    const bool use_measured_rate = (wl.dep_vel_model == SDWL_MeasuredRate);
+    const Real profile_eval_time = a_time + Real(0.5) * a_dt;
+
     const int nbins = (wl.num_bins < 1) ? 1
                     : ((wl.num_bins > SDWL_MAX_BINS) ? SDWL_MAX_BINS : wl.num_bins);
 
@@ -98,36 +119,49 @@ void SuperDropletPC::WallLoss ( const int        a_lev,
             if (p.id() <= 0)             { return; }
             if (ptrs.active_ptr[i] == 0) { return; }
 
-            const IntVect iv = getParticleCell(p, ctx.plo, ctx.dxi, ctx.domain);
-
-            // Side-wall face area adjacent to this cell (x and y faces).
-            Real A_side = Real(0.0);
-            if (wall_xlo && iv[0] == domlo0) { A_side += A_xface; }
-            if (wall_xhi && iv[0] == domhi0) { A_side += A_xface; }
-            if (wall_ylo && iv[1] == domlo1) { A_side += A_yface; }
-            if (wall_yhi && iv[1] == domhi1) { A_side += A_yface; }
-            // Top / bottom face area adjacent to this cell.
-            const Real A_top = (wall_zhi && iv[2] == domhi2) ? A_zface : Real(0.0);
-            const Real A_bot = (wall_zlo && iv[2] == domlo2) ? A_zface : Real(0.0);
-
-            if (A_side == Real(0.0) && A_top == Real(0.0) && A_bot == Real(0.0)) { return; }
-
             const Real r = ptrs.radius_ptr[i];
+            Real k_side;
+            Real k_top;
+            Real k_bot;
+            Real k_total;
 
-            // Gravitational settling velocity (use the SD terminal velocity).
-            const Real v_settle = wl.settling_correction
-                                ? std::abs(ptrs.vterm_ptr[i]) : Real(0.0);
+            if (use_measured_rate) {
+                // This is a whole-chamber coefficient, so every suspended
+                // particle is eligible regardless of its current mesh cell.
+                k_total = sd_wall_loss_measured_rate(r, profile_eval_time, wl);
+                k_side = k_total * measured_side_fraction;
+                k_top  = k_total * measured_top_fraction;
+                k_bot  = k_total * measured_bot_fraction;
+            } else {
+                const IntVect iv = getParticleCell(p, ctx.plo, ctx.dxi, ctx.domain);
 
-            // Per-boundary deposition velocities.
-            const Real vd_side = sd_vd_turbulent(r, wl, wl.vd_side);
-            const Real vd_top  = amrex::max(sd_vd_turbulent(r, wl, wl.vd_top) - v_settle, Real(0.0));
-            const Real vd_bot  = sd_vd_turbulent(r, wl, wl.vd_bottom) + v_settle;
+                // Side-wall face area adjacent to this cell (x and y faces).
+                Real A_side = Real(0.0);
+                if (wall_xlo && iv[0] == domlo0) { A_side += A_xface; }
+                if (wall_xhi && iv[0] == domhi0) { A_side += A_xface; }
+                if (wall_ylo && iv[1] == domlo1) { A_side += A_yface; }
+                if (wall_yhi && iv[1] == domhi1) { A_side += A_yface; }
+                // Top / bottom face area adjacent to this cell.
+                const Real A_top = (wall_zhi && iv[2] == domhi2) ? A_zface : Real(0.0);
+                const Real A_bot = (wall_zlo && iv[2] == domlo2) ? A_zface : Real(0.0);
 
-            // First-order loss coefficients per boundary group.
-            const Real k_side = sd_wall_loss_coefficient(vd_side, A_side, V_cell);
-            const Real k_top  = sd_wall_loss_coefficient(vd_top,  A_top,  V_cell);
-            const Real k_bot  = sd_wall_loss_coefficient(vd_bot,  A_bot,  V_cell);
-            const Real k_total = k_side + k_top + k_bot;
+                if (A_side == Real(0.0) && A_top == Real(0.0) && A_bot == Real(0.0)) { return; }
+
+                // Gravitational settling velocity (use the SD terminal velocity).
+                const Real v_settle = wl.settling_correction
+                                    ? std::abs(ptrs.vterm_ptr[i]) : Real(0.0);
+
+                // Per-boundary deposition velocities.
+                const Real vd_side = sd_vd_turbulent(r, wl, wl.vd_side);
+                const Real vd_top  = amrex::max(sd_vd_turbulent(r, wl, wl.vd_top) - v_settle, Real(0.0));
+                const Real vd_bot  = sd_vd_turbulent(r, wl, wl.vd_bottom) + v_settle;
+
+                // First-order loss coefficients per boundary group.
+                k_side = sd_wall_loss_coefficient(vd_side, A_side, V_cell);
+                k_top  = sd_wall_loss_coefficient(vd_top,  A_top,  V_cell);
+                k_bot  = sd_wall_loss_coefficient(vd_bot,  A_bot,  V_cell);
+                k_total = k_side + k_top + k_bot;
+            }
             if (k_total <= Real(0.0)) { return; }
 
             const Real xi_old = ptrs.mult_ptr[i];
@@ -198,12 +232,19 @@ void SuperDropletPC::WallLoss ( const int        a_lev,
             outfile.open(filename.c_str(), std::ios::out | std::ios::trunc);
             if (!outfile.good()) { amrex::FileOpenFailed(filename); }
             outfile << "# Super-droplet boundary-deposition wall-loss diagnostics\n";
+            const char* model_name = (wl.dep_vel_model == SDWL_Diffusion) ? "diffusion"
+                                   : (wl.dep_vel_model == SDWL_MeasuredRate) ? "measured_rate"
+                                   : "constant";
             outfile << "# Method: " << (wl.method == SDWL_Stochastic ? "stochastic" : "deterministic")
-                    << ",  deposition-velocity model: "
-                    << (wl.dep_vel_model == SDWL_Diffusion ? "diffusion" : "constant") << "\n";
+                    << ",  wall-loss model: " << model_name << "\n";
             outfile << "# vd_side=" << wl.vd_side << " vd_top=" << wl.vd_top
                     << " vd_bottom=" << wl.vd_bottom << " m/s, settling_correction="
-                    << (wl.settling_correction ? "on" : "off") << "\n";
+                    << ((wl.settling_correction && !use_measured_rate) ? "on" : "off") << "\n";
+            if (use_measured_rate) {
+                outfile << "# Measured k(Dp) profile points=" << wl.profile_size
+                        << ", time_varying=" << (wl.profile_time_varying ? "yes" : "no")
+                        << "; boundary diagnostics are partitioned by wall area\n";
+            }
             outfile << "# Size bins: " << nbins << " log-spaced on r in ["
                     << wl.bin_rmin << ", " << wl.bin_rmax << "] m\n";
             outfile << "# Columns:\n";

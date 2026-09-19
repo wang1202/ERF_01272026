@@ -232,10 +232,11 @@ class SuperDropletPC : public ERFPC
                                     const amrex::MultiFab& a_temperature,
                                     const bool a_diagnostics);
 
-        /*! \brief Apply size-dependent wall loss of super-droplets to the side walls.
+        /*! \brief Apply size-dependent wall loss of super-droplets to chamber walls.
          *
-         * First-order absorbing-wall sink acting only in cells adjacent to the
-         * lateral (x/y) side walls; top/bottom (z) boundaries are excluded.
+         * Physical deposition-velocity models act in cells adjacent to side,
+         * top, and bottom walls. The measured-rate model applies a calibrated
+         * whole-chamber first-order coefficient to the well-mixed population.
          * See ERF_SDWallLoss.H for the formulation. */
         virtual void WallLoss ( const int a_lev,
                                 const amrex::Real a_dt,

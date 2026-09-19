@@ -152,9 +152,11 @@ void SuperDropletPC::readInputs (const double a_dt)
             m_wall_loss.dep_vel_model = SDWL_Constant;
         } else if (wl_model == "diffusion" || wl_model == "stokes_einstein") {
             m_wall_loss.dep_vel_model = SDWL_Diffusion;
+        } else if (wl_model == "measured_rate" || wl_model == "measured_profile") {
+            m_wall_loss.dep_vel_model = SDWL_MeasuredRate;
         } else {
             amrex::Abort("Error in SuperDropletPC::readInputs() - invalid wall_loss.deposition_velocity_model "
-                         "(valid: constant, diffusion)");
+                         "(valid: constant, diffusion, measured_rate)");
         }
     }
 
@@ -174,7 +176,98 @@ void SuperDropletPC::readInputs (const double a_dt)
     pp.query("wall_loss.diffusion_temperature", m_wall_loss.diff_temperature);
     pp.query("wall_loss.diffusion_viscosity",   m_wall_loss.diff_viscosity);
     pp.query("wall_loss.diffusion_delta",       m_wall_loss.diff_delta);
+    pp.query("wall_loss.diffusion_slip_correction", m_wall_loss.diff_slip_correction);
+    pp.query("wall_loss.diffusion_mean_free_path",  m_wall_loss.diff_mean_free_path);
     pp.query("wall_loss.vd_floor",              m_wall_loss.vd_floor);
+
+    // Chamber-specific k(Dp) profiles inferred from seed-only experiments.
+    // Input units are configurable because the chamber literature commonly
+    // reports diameter in nm and the first-order coefficient in h^-1.
+    if (m_wall_loss.dep_vel_model == SDWL_MeasuredRate) {
+        Vector<Real> diameters;
+        Vector<Real> rates_start;
+        Vector<Real> rates_end;
+        if (!pp.queryarr("wall_loss.profile_diameters", diameters) ||
+            !pp.queryarr("wall_loss.profile_rates", rates_start)) {
+            amrex::Abort("Error in SuperDropletPC::readInputs() - measured_rate requires "
+                         "wall_loss.profile_diameters and wall_loss.profile_rates");
+        }
+        if (diameters.empty() || diameters.size() != rates_start.size()) {
+            amrex::Abort("Error in SuperDropletPC::readInputs() - wall_loss.profile_diameters "
+                         "and wall_loss.profile_rates must have the same nonzero length");
+        }
+        if (diameters.size() > SDWL_MAX_PROFILE_POINTS) {
+            amrex::Abort("Error in SuperDropletPC::readInputs() - measured wall-loss profile "
+                         "exceeds SDWL_MAX_PROFILE_POINTS");
+        }
+
+        std::string diameter_units = "m";
+        std::string rate_units = "s^-1";
+        pp.query("wall_loss.profile_diameter_units", diameter_units);
+        pp.query("wall_loss.profile_rate_units", rate_units);
+        Real diameter_scale;
+        if (diameter_units == "m") {
+            diameter_scale = Real(1.0);
+        } else if (diameter_units == "um" || diameter_units == "micron") {
+            diameter_scale = Real(1.0e-6);
+        } else if (diameter_units == "nm") {
+            diameter_scale = Real(1.0e-9);
+        } else {
+            amrex::Abort("Error in SuperDropletPC::readInputs() - invalid "
+                         "wall_loss.profile_diameter_units (valid: m, um, nm)");
+        }
+        Real rate_scale;
+        if (rate_units == "s^-1" || rate_units == "s-1" || rate_units == "1/s") {
+            rate_scale = Real(1.0);
+        } else if (rate_units == "h^-1" || rate_units == "h-1" || rate_units == "1/h") {
+            rate_scale = Real(1.0 / 3600.0);
+        } else {
+            amrex::Abort("Error in SuperDropletPC::readInputs() - invalid "
+                         "wall_loss.profile_rate_units (valid: s^-1, h^-1)");
+        }
+
+        const bool have_end_profile = pp.queryarr("wall_loss.profile_rates_end", rates_end);
+        if (have_end_profile && rates_end.size() != rates_start.size()) {
+            amrex::Abort("Error in SuperDropletPC::readInputs() - wall_loss.profile_rates_end "
+                         "must have the same length as wall_loss.profile_rates");
+        }
+
+        m_wall_loss.profile_size = static_cast<int>(diameters.size());
+        for (int i = 0; i < m_wall_loss.profile_size; ++i) {
+            const Real diameter = diameters[i] * diameter_scale;
+            const Real start_rate = rates_start[i] * rate_scale;
+            const Real end_rate = have_end_profile ? rates_end[i] * rate_scale : start_rate;
+            if (diameter <= Real(0.0) || start_rate < Real(0.0) || end_rate < Real(0.0)) {
+                amrex::Abort("Error in SuperDropletPC::readInputs() - measured wall-loss "
+                             "diameters must be positive and rates must be nonnegative");
+            }
+            if (i > 0 && diameter <= m_wall_loss.profile_diameter[i-1]) {
+                amrex::Abort("Error in SuperDropletPC::readInputs() - "
+                             "wall_loss.profile_diameters must be strictly increasing");
+            }
+            m_wall_loss.profile_diameter[i] = diameter;
+            m_wall_loss.profile_rate_start[i] = start_rate;
+            m_wall_loss.profile_rate_end[i] = end_rate;
+        }
+        m_wall_loss.profile_time_varying = have_end_profile;
+        if (have_end_profile) {
+            const bool have_start_time = pp.query("wall_loss.profile_time_start",
+                                                  m_wall_loss.profile_time_start);
+            const bool have_end_time = pp.query("wall_loss.profile_time_end",
+                                                m_wall_loss.profile_time_end);
+            if (!have_start_time || !have_end_time ||
+                m_wall_loss.profile_time_end <= m_wall_loss.profile_time_start) {
+                amrex::Abort("Error in SuperDropletPC::readInputs() - profile_rates_end requires "
+                             "profile_time_start < profile_time_end");
+            }
+        }
+        if (m_wall_loss.settling_correction) {
+            amrex::Warning("SuperDropletPC::readInputs() - wall_loss.settling_correction is "
+                           "ignored by measured_rate because the measured k(Dp) already "
+                           "contains the combined wall-loss mechanisms.");
+        }
+    }
+
     pp.query("wall_loss.num_bins",  m_wall_loss.num_bins);
     pp.query("wall_loss.bin_rmin",  m_wall_loss.bin_rmin);
     pp.query("wall_loss.bin_rmax",  m_wall_loss.bin_rmax);
@@ -260,15 +353,24 @@ void SuperDropletPC::readInputs (const double a_dt)
     }
 
     if (m_wall_loss.enable) {
+        const char* model_name = (m_wall_loss.dep_vel_model == SDWL_Diffusion) ? "diffusion"
+                               : (m_wall_loss.dep_vel_model == SDWL_MeasuredRate) ? "measured_rate"
+                               : "constant";
         amrex::Print() << "SuperDropletPC(" << m_name << "): boundary deposition loss enabled"
                        << ", method=" << (m_wall_loss.method == SDWL_Stochastic ? "stochastic" : "deterministic")
-                       << ", vd model=" << (m_wall_loss.dep_vel_model == SDWL_Diffusion ? "diffusion" : "constant");
+                       << ", model=" << model_name;
         if (m_wall_loss.dep_vel_model == SDWL_Constant) {
             amrex::Print() << ", vd_side=" << m_wall_loss.vd_side
                            << " vd_top=" << m_wall_loss.vd_top
                            << " vd_bottom=" << m_wall_loss.vd_bottom << " m/s";
+        } else if (m_wall_loss.dep_vel_model == SDWL_MeasuredRate) {
+            amrex::Print() << ", profile_points=" << m_wall_loss.profile_size
+                           << ", time_varying="
+                           << (m_wall_loss.profile_time_varying ? "yes" : "no");
         }
-        amrex::Print() << ", settling=" << (m_wall_loss.settling_correction ? "on" : "off")
+        amrex::Print() << ", settling="
+                       << ((m_wall_loss.settling_correction &&
+                            m_wall_loss.dep_vel_model != SDWL_MeasuredRate) ? "on" : "off")
                        << ", deactivate=" << (m_wall_loss.deactivate_on_depletion ? "on" : "off")
                        << ", " << m_wall_loss.num_bins << " size bins.\n";
     }

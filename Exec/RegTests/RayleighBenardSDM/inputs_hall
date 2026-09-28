@@ -1,0 +1,76 @@
+erf.prob_name = "SDM_Congestus3D"
+erf.init_type = input_sounding
+erf.input_sounding_file = input_sounding
+erf.sounding_type = Ideal
+erf.anelastic = 1
+erf.use_gravity = true
+erf.use_coriolis = false
+erf.buoyancy_type = 1
+
+stop_time = 1.0
+max_step = 1000
+geometry.prob_lo = 0.0 0.0 0.0
+geometry.prob_hi = 0.2 0.2 0.1
+amr.n_cell = 64 64 32
+geometry.is_periodic = 1 1 0
+zlo.type = NoSlipWall
+zhi.type = NoSlipWall
+zlo.theta = 300.5
+zhi.theta = 299.5
+
+# Molecular DNS; no subgrid parameterizations.
+erf.les_type = None
+erf.pbl_type = None
+erf.molec_diff_type = Constant
+erf.dynamic_viscosity = 1.81e-5
+erf.alpha_T = 2.1e-5
+erf.alpha_C = 0.0
+
+erf.dycore_horiz_adv_type = Blended_5th6th
+erf.dycore_horiz_upw_frac = 0.2
+erf.dycore_vert_adv_type = Centered_6th
+erf.dryscal_horiz_adv_type = Blended_5th6th
+erf.dryscal_horiz_upw_frac = 0.2
+erf.dryscal_vert_adv_type = Centered_6th
+erf.moistscal_horiz_adv_type = Blended_5th6th
+erf.moistscal_horiz_upw_frac = 0.2
+erf.moistscal_vert_adv_type = Centered_6th
+
+erf.fixed_dt = 1.0e-3
+erf.sum_interval = 100
+erf.v = 1
+amr.v = 1
+amr.max_level = 0
+erf.fix_random_seed = true
+erf.check_file = chk
+erf.check_int = -1
+erf.plot_file_1 = output_hall_fixedphase/plt
+erf.plot_int_1 = 200
+erf.plot_vars_1 = density x_velocity y_velocity z_velocity pressure theta temp qv qc qrain super_droplets_moisture_number_density
+particles.disable_plt = true
+
+erf.moisture_model = SuperDroplets
+super_droplets_moisture.distribution_type = uniform
+super_droplets_moisture.include_phase_change = false
+super_droplets_moisture.coalescence_kernel = Halls
+super_droplets_moisture.paper_epsilon = 1.0e-2
+super_droplets_moisture.paper_re_lambda = 2500
+super_droplets_moisture.include_brownian_coalescence = false
+super_droplets_moisture.diagnostics_interval = 100
+super_droplets_moisture.num_initializations = 1
+super_droplets_moisture.initial_number_density = 1.0e8
+super_droplets_moisture.initial_particles_per_cell = 2
+super_droplets_moisture.initial_species_distribution_type_H2O = radius_log_normal
+super_droplets_moisture.initial_species_min_radius_H2O = 16.0e-6
+super_droplets_moisture.initial_species_mean_radius_H2O = 20.0e-6
+super_droplets_moisture.initial_species_max_radius_H2O = 24.0e-6
+super_droplets_moisture.initial_species_geomstd_radius_H2O = 1.1
+
+prob.rho_0 = 1.16
+prob.T_0 = 300.0
+prob.A_0 = 0.0
+prob.KE_0 = 0.0
+prob.pert_ref_height = 0.1
+prob.pert_deltaT = 0.01
+prob.pert_periods_T = 2.0
+prob.W_0_Pert_Mag = 1.0e-4

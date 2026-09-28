@@ -296,6 +296,8 @@ class SuperDropletPC : public ERFPC
 
         SDCoalescenceKernelType m_coalescence_kernel; /*!< Coalescence kernel */
         bool m_include_brownian_coalescence; /*!< Include Brownian coalescence? */
+        amrex::Real m_paper_epsilon; /*!< Prescribed turbulence dissipation [m^2/s^3] for paper kernels */
+        amrex::Real m_paper_re_lambda; /*!< Prescribed Taylor-scale Reynolds number for paper kernels */
 
         SDTerminalVelocityType m_term_vel_type_w; /*!< Terminal velocity model for water droplets */
 

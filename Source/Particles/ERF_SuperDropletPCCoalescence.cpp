@@ -119,6 +119,10 @@ void SuperDropletPC::Coalescence( int   a_lev,
 
     auto kernel_choice = m_coalescence_kernel;
     auto include_brownian_coalescence = m_include_brownian_coalescence;
+    const bool paper_ideal = kernel_choice == SDCoalescenceKernelType::paper_ideal;
+    const bool statistical_efficiency = kernel_choice == SDCoalescenceKernelType::statistical_efficiency;
+    const Real paper_epsilon = m_paper_epsilon;
+    const Real paper_re_lambda = m_paper_re_lambda;
 
     Real mcshuffle_wtime_sec = zero;
     Real mcpairing_wtime_sec = zero;
@@ -375,9 +379,29 @@ void SuperDropletPC::Coalescence( int   a_lev,
             AMREX_ALWAYS_ASSERT(mult_ptr[pi] >= mult_ptr[pj]);
 
             ParticleReal k_val = zero;
+            ParticleReal pressure = zero, temperature = zero;
+            if (paper_ideal || statistical_efficiency || include_brownian_coalescence) {
+                ParticleType& par_1 = pstruct_ptr[pi];
+                auto iv = getParticleCell(par_1, plo, dxi, domain);
+                pressure = pressure_arr(iv[0],iv[1],iv[2],0);
+                temperature = temperature_arr(iv[0],iv[1],iv[2],0);
+            }
+
             if (kernel_choice == SDCoalescenceKernelType::golovin) {
 
                 k_val = ckernel.golovin(radius_ptr[pi],radius_ptr[pj]);
+
+            } else if (paper_ideal) {
+
+                k_val = ckernel.paperIdeal(radius_ptr[pi], radius_ptr[pj],
+                                           paper_epsilon, paper_re_lambda,
+                                           pressure, temperature, rho_w);
+
+            } else if (statistical_efficiency) {
+
+                k_val = ckernel.statisticalEfficiency(radius_ptr[pi], radius_ptr[pj],
+                                              paper_epsilon, paper_re_lambda,
+                                              pressure, temperature, rho_w);
 
             } else {
 
@@ -397,20 +421,17 @@ void SuperDropletPC::Coalescence( int   a_lev,
                     k_val = ckernel.Halls(radius_ptr[pi],radius_ptr[pj],v_i,v_j);
                 }
 
-                if (k_val < zero) {
+            }
+
+            if (k_val < zero || !std::isfinite(k_val)) {
+                if (paper_ideal || statistical_efficiency) {
+                    amrex::Abort("Invalid paper collision kernel; check fit domain and environmental inputs");
+                } else {
                     amrex::Abort("Invalid value for k_val");
                 }
             }
 
             if (include_brownian_coalescence) {
-
-                ParticleReal pressure = zero, temperature = zero;
-                {
-                    ParticleType& par_1 = pstruct_ptr[pi];
-                    auto iv = getParticleCell(par_1, plo, dxi, domain);
-                    pressure = pressure_arr(iv[0],iv[1],iv[2],0);
-                    temperature = temperature_arr(iv[0],iv[1],iv[2],0);
-                }
 
                 ParticleReal sd_mass_1 = zero,
                              sd_mass_2 = zero;
@@ -442,13 +463,15 @@ void SuperDropletPC::Coalescence( int   a_lev,
                                                                 sd_mass_2,
                                                                 pressure,
                                                                 temperature );
-                if (k_brown < zero) {
+                if (k_brown < zero || !std::isfinite(k_brown)) {
                     amrex::Abort("Invalid value for k_brown");
                 }
 
                 k_val += k_brown;
             }
-
+            if (k_val < zero || !std::isfinite(k_val)) {
+                amrex::Abort("Invalid combined collision kernel value");
+            }
 
             auto prob_ij = k_val*inv_bin_volume;
             auto prob_sd_ij = std::max(mult_ptr[pi],mult_ptr[pj])*prob_ij;

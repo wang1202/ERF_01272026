@@ -506,6 +506,69 @@ Several collision kernels are implemented:
 - **Sedimentation kernel**: Based on geometric collision cross-section
 - **Long's kernel**: Empirical formula for gravitational collision
 - **Hall's kernel**: Table-based collection efficiency for realistic cloud conditions
+- **Paper ideal kernel**: the ideal collision-rate fit of Dhanasekaran, Roy, and Koch (2021), Eq. 3.2.
+- **Statistical-efficiency kernel**: the same ideal rate multiplied by their Eq. 5.7 collision efficiency.
+
+The paper kernels are selected with ``coalescence_kernel = "paper_ideal"`` or
+``coalescence_kernel = "statistical_efficiency"``. Both use the prescribed dissipation
+``paper_epsilon`` (default :math:`10^{-2}\,\mathrm{m^2\,s^{-3}}`) and
+``paper_re_lambda`` (default 2500). The paper discusses
+:math:`10^{-3}` and :math:`10^{-1}\,\mathrm{m^2\,s^{-3}}` as low- and
+high-dissipation sensitivity cases. Set ``paper_re_lambda = 90`` in
+``paper_ideal`` mode to compare the other ideal-rate curve in Fig. 2. Vary the
+radius pairs at fixed pressure and temperature to span the plotted Q range; ERF
+computes Q from their Stokes settling-speed difference. The
+statistical-efficiency fit was made at :math:`Re_\lambda=2500`; ERF rejects other
+Reynolds numbers in ``statistical_efficiency`` mode.
+
+The ideal pair kernel is
+
+.. math::
+
+   K_0(a_1,a_2) = \Gamma_\eta(a_1+a_2)^3
+   \left[\frac{1.55 Re_\lambda^{-0.09}}{1+2.1Q} + \frac{\pi}{2}Q\right],
+
+where :math:`\Gamma_\eta=\sqrt{\epsilon/\nu}`. ERF uses the same
+pressure- and temperature-based air-viscosity and mean-free-path formulas as
+its Brownian kernel. It estimates dry-air density as :math:`p/(R_dT)` and then
+:math:`\nu=\mu/\rho_{air}`. The settling parameter uses the positive Stokes
+speed magnitude
+
+.. math::
+
+   Q = \frac{2\rho_p g |a_1^2-a_2^2|}{9\mu\Gamma_\eta a_*},
+   \qquad a_*=(a_1+a_2)/2.
+
+The absolute value resolves the sign mismatch between the printed Q numerator
+and the paper's stated :math:`\kappa=a_2/a_1\leq1` ordering. The statistical-efficiency
+mode uses :math:`Kn=\lambda_g/a_*` and :math:`\beta` from Eq. 5.7, Tables 2–3,
+and Eqs. 5.8–5.10 of `Dhanasekaran et al. (2021) <https://doi.org/10.1017/jfm.2020.1113>`_. ERF uses the H2O material density for :math:`\rho_p`.
+Because the paper does not publish its between-node polynomial coefficients,
+ERF linearly interpolates the tabulated coefficients in :math:`\kappa`; values
+at each published node match the tables. Equal-size pairs use the :math:`\kappa=0.99`
+endpoint. The statistical-efficiency mode stops with an error outside the fitted
+:math:`0.3\leq\kappa\leq1`, :math:`10^{-4}\leq Kn\leq0.2`,
+:math:`0\leq Q\leq10^5` domain, or when either radius is below
+:math:`15\,\mu\mathrm{m}`. This fit omits van der Waals attraction and is
+intended for warm-liquid, inertialess droplets in its stated range.
+
+Brownian collisions remain a separately enabled additive kernel. Turn them off
+(``include_brownian_coalescence = false``) for comparisons with the paper's
+ideal-rate curves. The paper selectors do not change the existing default or
+the Golovin, sedimentation, Long, or Hall choices.
+
+Example input for the Fig. 2 ideal-rate curve at :math:`Re_\lambda=90`:
+
+.. code-block:: ini
+
+   super_droplets_moisture.coalescence_kernel = "paper_ideal"
+   super_droplets_moisture.paper_epsilon = 1.0e-2
+   super_droplets_moisture.paper_re_lambda = 90
+   super_droplets_moisture.include_brownian_coalescence = false
+
+For an ideal-versus-statistical-efficiency comparison, use ``paper_re_lambda = 2500`` in
+both runs and change only ``coalescence_kernel`` between ``paper_ideal`` and
+``statistical_efficiency``.
 
 Coupling with Eulerian Dynamics
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -629,7 +692,13 @@ All SDM parameters use the prefix ``super_droplets_moisture``:
      - Use prescribed vertical velocity
    * - ``coalescence_kernel``
      - ``sedimentation``
-     - Coalescence kernel type (``golovin``, ``sedimentation``, ``Longs``, ``Halls``)
+     - Coalescence kernel type (``golovin``, ``sedimentation``, ``Longs``, ``Halls``, ``paper_ideal``, ``statistical_efficiency``)
+   * - ``paper_epsilon``
+     - ``1.0e-2``
+     - Prescribed turbulent dissipation [m^2/s^3] used by the paper kernels
+   * - ``paper_re_lambda``
+     - ``2500``
+     - Prescribed Taylor-scale Reynolds number; ``statistical_efficiency`` requires 2500
    * - ``terminal_velocity_model``
      - ``CloudRainShima``
      - Terminal velocity formula (``RogersYau``, ``AtlasUlbrich``, ``CloudRainShima``)

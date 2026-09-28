@@ -1,3 +1,4 @@
+#include <cmath>
 #include <random>
 #include "ERF_Constants.H"
 #include "ERF_SuperDropletPC.H"
@@ -85,6 +86,8 @@ void SuperDropletPC::readInputs (const amrex::Real a_dt)
     m_coalescence_kernel = SDCoalescenceKernelType::sedimentation;
     coal_kernel_name = "sedimentation";
     m_include_brownian_coalescence = false;
+    m_paper_epsilon = Real(1.0e-2);
+    m_paper_re_lambda = Real(2500.0);
     m_term_vel_type_w = SDTerminalVelocityType::CloudRainShima;
 
     /* read these parameters if specified */
@@ -105,6 +108,8 @@ void SuperDropletPC::readInputs (const amrex::Real a_dt)
     pp.query("distribution_rmax", m_bindist_rmax);
 #endif
     pp.query("include_brownian_coalescence", m_include_brownian_coalescence);
+    pp.query("paper_epsilon", m_paper_epsilon);
+    pp.query("paper_re_lambda", m_paper_re_lambda);
     pp.query("sigma0", m_sigma0);
     pp.query("place_randomly_in_cells", m_place_randomly_in_cells);
 
@@ -148,8 +153,24 @@ void SuperDropletPC::readInputs (const amrex::Real a_dt)
         m_coalescence_kernel = SDCoalescenceKernelType::Longs;
     } else if (coal_kernel_name == "Halls") {
         m_coalescence_kernel = SDCoalescenceKernelType::Halls;
+    } else if (coal_kernel_name == "paper_ideal") {
+        m_coalescence_kernel = SDCoalescenceKernelType::paper_ideal;
+    } else if (coal_kernel_name == "statistical_efficiency") {
+        m_coalescence_kernel = SDCoalescenceKernelType::statistical_efficiency;
     } else {
         amrex::Abort("Error in SuperDropletPC::readInputs() - invalid kernel choice!");
+    }
+
+    const bool paper_kernel =
+        m_coalescence_kernel == SDCoalescenceKernelType::paper_ideal ||
+        m_coalescence_kernel == SDCoalescenceKernelType::statistical_efficiency;
+    if (paper_kernel && (!(m_paper_epsilon > zero) || !(m_paper_re_lambda > zero) ||
+                         !std::isfinite(m_paper_epsilon) || !std::isfinite(m_paper_re_lambda))) {
+        amrex::Abort("paper collision kernels require positive paper_epsilon and paper_re_lambda");
+    }
+    if (m_coalescence_kernel == SDCoalescenceKernelType::statistical_efficiency &&
+        std::abs(m_paper_re_lambda-Real(2500.0)) > Real(1.0e-10)) {
+        amrex::Abort("statistical_efficiency is fitted at Re_lambda=2500; use paper_ideal for other Reynolds-number comparisons");
     }
 
     {
@@ -307,6 +328,14 @@ void SuperDropletPC::InitializeParticles (const Real a_t, const MFPtr& a_ptr)
         Print() << "Longs" << "\n";
     } else if (m_coalescence_kernel == SDCoalescenceKernelType::Halls) {
         Print() << "Halls" << "\n";
+    } else if (m_coalescence_kernel == SDCoalescenceKernelType::paper_ideal) {
+        Print() << "paper_ideal" << "\n"
+                << "  Paper epsilon [m^2/s^3]: " << m_paper_epsilon << "\n"
+                << "  Paper Re_lambda: " << m_paper_re_lambda << "\n";
+    } else if (m_coalescence_kernel == SDCoalescenceKernelType::statistical_efficiency) {
+        Print() << "statistical_efficiency" << "\n"
+                << "  Paper epsilon [m^2/s^3]: " << m_paper_epsilon << "\n"
+                << "  Paper Re_lambda: " << m_paper_re_lambda << "\n";
     }
     Print() << "  Mass change time integrator: ";
     if (m_mass_change_ti == SDMassChangeTIMethod::RK3BS) {

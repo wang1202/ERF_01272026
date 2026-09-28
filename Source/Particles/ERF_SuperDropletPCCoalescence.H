@@ -2,6 +2,7 @@
 #define SUPERDROPLET_PC_COALESCENCE_H_
 
 #include <algorithm>
+#include <cmath>
 #include "ERF_Constants.H"
 
 #ifdef ERF_USE_PARTICLES
@@ -17,6 +18,220 @@
 template<typename RT, int SPACEDIM>
 struct CollisionKernel
 {
+    struct PaperPairParameters {
+        RT gamma_eta{zero};
+        RT Q{zero};
+        RT Kn{zero};
+        RT kappa{zero};
+        bool valid{false};
+    };
+
+    struct PaperFitCoefficients {
+        RT A1, B0, B1, L1, M0, M1;
+        RT p1_epsilon, p2_epsilon, p1_g, p2_g;
+    };
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    static RT kappaNode (const int i) noexcept
+    {
+        switch (i) {
+        case 0: return RT(0.30);
+        case 1: return RT(0.40);
+        case 2: return RT(0.50);
+        case 3: return RT(0.60);
+        case 4: return RT(0.70);
+        case 5: return RT(0.80);
+        case 6: return RT(0.90);
+        default: return RT(0.99);
+        }
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    static PaperFitCoefficients paperFitNode (const int i) noexcept
+    {
+        // Table 2: A1, B0, B1, L1, M0, M1.
+        // Table 3: p1_epsilon, p2_epsilon, p1_g, p2_g.
+        switch (i) {
+        case 0: return {RT(2.53), RT(0.20), RT(2.77), RT(0.45), RT(0.07), RT(1.16),
+                        RT(12.60), RT(5.04), RT(13.68), RT(5.95)};
+        case 1: return {RT(3.03), RT(0.32), RT(2.46), RT(0.56), RT(0.11), RT(1.16),
+                        RT(7.70), RT(5.23), RT(7.99), RT(6.40)};
+        case 2: return {RT(3.41), RT(0.42), RT(2.00), RT(0.64), RT(0.15), RT(1.08),
+                        RT(4.43), RT(4.84), RT(4.40), RT(6.71)};
+        case 3: return {RT(3.69), RT(0.49), RT(1.59), RT(0.70), RT(0.18), RT(0.98),
+                        RT(3.09), RT(4.52), RT(2.74), RT(6.73)};
+        case 4: return {RT(3.88), RT(0.54), RT(1.28), RT(0.74), RT(0.20), RT(0.89),
+                        RT(2.42), RT(4.03), RT(1.97), RT(6.73)};
+        case 5: return {RT(4.00), RT(0.57), RT(1.09), RT(0.76), RT(0.21), RT(0.84),
+                        RT(2.11), RT(3.70), RT(1.62), RT(6.73)};
+        case 6: return {RT(4.06), RT(0.59), RT(0.98), RT(0.78), RT(0.22), RT(0.81),
+                        RT(1.97), RT(3.55), RT(1.46), RT(6.73)};
+        default: return {RT(4.06), RT(0.59), RT(0.95), RT(0.78), RT(0.22), RT(0.80),
+                         RT(1.97), RT(3.65), RT(1.42), RT(6.72)};
+        }
+    }
+
+    // The article states that coefficients between tabulated kappa values were
+    // polynomial-fitted, but does not publish those polynomial coefficients.
+    // ERF uses piecewise-linear interpolation and exactly reproduces every node.
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    static PaperFitCoefficients interpolatePaperFit (const RT kappa) noexcept
+    {
+        int hi = 1;
+        while (hi < 7 && kappa > kappaNode(hi)) { ++hi; }
+        const int lo = hi - 1;
+        const RT weight = (kappa - kappaNode(lo)) / (kappaNode(hi) - kappaNode(lo));
+        const auto x = paperFitNode(lo);
+        const auto y = paperFitNode(hi);
+        return {
+            x.A1 + weight*(y.A1-x.A1), x.B0 + weight*(y.B0-x.B0),
+            x.B1 + weight*(y.B1-x.B1), x.L1 + weight*(y.L1-x.L1),
+            x.M0 + weight*(y.M0-x.M0), x.M1 + weight*(y.M1-x.M1),
+            x.p1_epsilon + weight*(y.p1_epsilon-x.p1_epsilon),
+            x.p2_epsilon + weight*(y.p2_epsilon-x.p2_epsilon),
+            x.p1_g + weight*(y.p1_g-x.p1_g), x.p2_g + weight*(y.p2_g-x.p2_g)
+        };
+    }
+
+    /*! Dynamic viscosity used by the existing Brownian kernel (Pa s). */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    static RT airDynamicViscosity (const RT temperature) noexcept
+    {
+        const RT t_degC = temperature - RT(273.15);
+        if (t_degC >= zero) {
+            return (RT(1.7180) + RT(4.9E-3)*t_degC) * RT(1.E-5);
+        }
+        return (RT(1.7180) + RT(4.9E-3)*t_degC - RT(1.2E-5)*t_degC*t_degC) * RT(1.E-5);
+    }
+
+    /*! Gas mean free path used by the existing Brownian kernel (m). */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    static RT airMeanFreePath (const RT pressure, const RT temperature,
+                               const RT viscosity) noexcept
+    {
+        // Preserve the existing Brownian-kernel expression and its promotion rules.
+        return (two*viscosity) /
+               (pressure*std::sqrt(RT(8.0)*mwdair*RT(1.E-3)/(PI*R_d*temperature)));
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    PaperPairParameters paperPairParameters (const RT r1, const RT r2,
+                                              const RT epsilon,
+                                              const RT pressure,
+                                              const RT temperature,
+                                              const RT rho_p) const noexcept
+    {
+        PaperPairParameters result;
+        if (!(r1 > zero && r2 > zero && epsilon > zero && pressure > zero &&
+              temperature > zero && rho_p > zero) ||
+            !std::isfinite(r1) || !std::isfinite(r2) || !std::isfinite(epsilon) ||
+            !std::isfinite(pressure) || !std::isfinite(temperature) || !std::isfinite(rho_p)) {
+            return result;
+        }
+
+        const RT a1 = std::max(r1, r2);
+        const RT a2 = std::min(r1, r2);
+        const RT a_star = RT(0.5)*(a1+a2);
+        const RT mu = airDynamicViscosity(temperature);
+        const RT lambda_g = airMeanFreePath(pressure, temperature, mu);
+        // Coalescence currently receives pressure and temperature but not moist-air density.
+        // Use the dry-air ideal-gas density consistently with ERF's R_d constant.
+        const RT rho_air = pressure/(RT(R_d)*temperature);
+        const RT nu = mu/rho_air;
+        const RT gamma_eta = std::sqrt(epsilon/nu);
+        const RT settling_speed = RT(2.0)*rho_p*RT(CONST_GRAV)*
+                                 std::fabs(a1*a1-a2*a2)/(RT(9.0)*mu);
+        const RT q = settling_speed/(gamma_eta*a_star);
+        const RT kn = lambda_g/a_star;
+        const RT kappa = a2/a1;
+
+        if (!(mu > zero && lambda_g > zero && nu > zero && gamma_eta > zero &&
+              q >= zero && kn > zero && kappa > zero) ||
+            !std::isfinite(mu) || !std::isfinite(lambda_g) || !std::isfinite(nu) ||
+            !std::isfinite(gamma_eta) || !std::isfinite(q) || !std::isfinite(kn) ||
+            !std::isfinite(kappa)) {
+            return result;
+        }
+
+        result.gamma_eta = gamma_eta;
+        result.Q = q;
+        result.Kn = kn;
+        result.kappa = kappa;
+        result.valid = true;
+        return result;
+    }
+
+    /*! Eq. 3.2 pair kernel from Dhanasekaran, Roy & Koch (2021). */
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    RT paperIdealFromParameters (const RT r1, const RT r2, const RT re_lambda,
+                                 const PaperPairParameters& params) const noexcept
+    {
+        if (!params.valid || !(re_lambda > zero) || !std::isfinite(re_lambda)) { return -one; }
+        const RT sumr = r1+r2;
+        const RT normalized = RT(1.55)*std::pow(re_lambda, RT(-0.09)) /
+                             (one+RT(2.1)*params.Q) + PIoTwo*params.Q;
+        const RT kernel = params.gamma_eta*sumr*sumr*sumr*normalized;
+        return (kernel >= zero && std::isfinite(kernel)) ? kernel : -one;
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    RT paperIdeal (const RT r1, const RT r2, const RT epsilon,
+                   const RT re_lambda, const RT pressure,
+                   const RT temperature, const RT rho_p) const noexcept
+    {
+        const auto params = paperPairParameters(r1, r2, epsilon, pressure, temperature, rho_p);
+        return paperIdealFromParameters(r1, r2, re_lambda, params);
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    RT paperCollisionEfficiency (const RT kappa, const RT kn, const RT q) const noexcept
+    {
+        if (!(kappa >= RT(0.30) && kappa <= one && kn >= RT(1.0e-4) &&
+              kn <= RT(0.2) && q >= zero && q <= RT(1.0e5)) ||
+            !std::isfinite(kappa) || !std::isfinite(kn) || !std::isfinite(q)) {
+            return -one;
+        }
+
+        // Table 2 and Table 3 stop at kappa=0.99. Hold the endpoint for equal-size
+        // pairs rather than extrapolating beyond the published tabulation.
+        const RT fit_kappa = std::min(kappa, RT(0.99));
+        const auto c = interpolatePaperFit(fit_kappa);
+        const RT theta = RT(53.0)*PI/RT(180.0);
+        const RT cos_theta = std::cos(theta);
+        const RT angular = RT(3.0)*cos_theta*cos_theta-one;
+        const RT denominator = RT(2.0)*c.A1*angular + c.L1*q*cos_theta;
+        if (!(denominator > zero)) { return -one; }
+
+        const RT q1 = (RT(3.0)*c.B0*angular + c.M0*q*cos_theta)/denominator;
+        const RT q2 = (RT(3.0)*c.B1*angular + c.M1*q*cos_theta)/denominator;
+        const RT log_inv_kn = std::log(one/kn);
+        const RT l2 = one/(fit_kappa*kn*log_inv_kn);
+        const RT exp_l1q = std::exp(-q);
+        const RT exp_l2q = std::exp(-l2*q);
+        const RT p1 = exp_l1q*c.p1_epsilon + (one-exp_l1q)*c.p1_g;
+        const RT p2 = exp_l2q*c.p2_epsilon + (one-exp_l2q)*c.p2_g;
+        const RT beta = p1*std::pow(kn, q1)/std::pow(p2+log_inv_kn, q2);
+        return (beta >= zero && std::isfinite(beta)) ? beta : -one;
+    }
+
+    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+    RT statisticalEfficiency (const RT r1, const RT r2, const RT epsilon,
+                      const RT re_lambda, const RT pressure,
+                      const RT temperature, const RT rho_p) const noexcept
+    {
+        // The paper's Eq. 5.7 omits van der Waals attraction and is stated to
+        // apply to droplets with radii >= 15 micrometres.
+        if (std::min(r1, r2) < RT(15.0e-6)) { return -one; }
+        const auto params = paperPairParameters(r1, r2, epsilon, pressure, temperature, rho_p);
+        if (!params.valid || !(re_lambda > zero) || !std::isfinite(re_lambda)) { return -one; }
+        const RT beta = paperCollisionEfficiency(params.kappa, params.Kn, params.Q);
+        if (beta < zero) { return -one; }
+        const RT ideal_kernel = paperIdealFromParameters(r1, r2, re_lambda, params);
+        if (ideal_kernel < zero) { return -one; }
+        const RT kernel = beta*ideal_kernel;
+        return (kernel >= zero && std::isfinite(kernel)) ? kernel : -one;
+    }
+
     /*! \brief Golovin kernel */
     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
     RT golovin ( const RT a_r1, /*!< radius of droplet 1 */
@@ -294,17 +509,9 @@ struct CollisionKernel
         RT p_crs = a_pressure; // [Pa]
         RT t_crs = a_temperature; // [K]
 
-        // dynamic viscosity [Pa*s] (Pruppacher & Klett,1997)
-        RT T_degC = t_crs - RT(273.15); // [K] => [degC]
-        RT vis_crs = zero;
-        if( T_degC >= zero ) {
-            vis_crs = ( RT(1.7180) + RT(4.9E-3)*T_degC ) * RT(1.E-5);
-        } else {
-            vis_crs = ( RT(1.7180) + RT(4.9E-3)*T_degC -RT(1.2E-5)*T_degC*T_degC ) * RT(1.E-5);
-        }
-
-        //air mean free path [m]
-        RT lambda_crs = (two*vis_crs) / (p_crs*std::sqrt(RT(8.0)*mwdair*RT(1.E-3)/(PI*R_d*t_crs)));
+        // Dynamic viscosity and air mean free path [Pa*s] and [m].
+        RT vis_crs = airDynamicViscosity(t_crs);
+        RT lambda_crs = airMeanFreePath(p_crs, t_crs, vis_crs);
 
         // temporary var
         RT dtmp = zero;

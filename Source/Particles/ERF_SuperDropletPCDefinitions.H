@@ -197,7 +197,9 @@ enum struct SDCoalescenceKernelType {
     golovin,
     sedimentation,
     Longs,
-    Halls
+    Halls,
+    paper_ideal,
+    statistical_efficiency
 };
 
 /*! \brief Types of phase change ODE time integrator */

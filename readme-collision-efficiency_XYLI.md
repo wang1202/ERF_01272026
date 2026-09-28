@@ -134,6 +134,17 @@ The ideal-rate comparison at `Re_lambda=90` and `2500` is made against the paper
 - `Source/Particles/ERF_SuperDropletPCInitializations.cpp`: input parsing, validation, and startup reporting.
 - `Source/Particles/ERF_SuperDropletPC.H`: stored prescribed turbulence parameters.
 - `Docs/sphinx_doc/theory/Microphysics.rst`: SDM model and input documentation.
+- [make_comparison.py](Exec/RegTests/RayleighBenardSDM/post-processing/make_comparison.py): generates the number-based statistical-efficiency versus Hall figure from run logs and binned DSD data. The committed PNG is saved beside the script.
+
+Run the plot script with the two simulation-output directories:
+
+```sh
+python3 Exec/RegTests/RayleighBenardSDM/post-processing/make_comparison.py \
+  --statistical-efficiency-run /path/to/statistical_efficiency_run \
+  --hall-run /path/to/hall_run
+```
+
+Each run directory needs `run.log` and the binned DSD text files for steps 00500, 01000, and 01500. The script requires Python 3, NumPy, and Pillow. It writes the PNG and derived CSV files into `post-processing` unless `--output-dir` is supplied.
 
 ## Verification status
 
